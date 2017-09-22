@@ -1,5 +1,5 @@
 /*
- * Copyright © 2013-2015 Red Hat, Inc.
+ * Copyright © 2013-2017 Red Hat, Inc.
  *
  * Permission to use, copy, modify, distribute, and sell this software
  * and its documentation for any purpose is hereby granted without
@@ -211,6 +211,10 @@ update_mode_prop(InputInfoPtr pInfo,
 
 static enum event_handling
 xf86libinput_handle_event(struct libinput_event *event);
+
+static void
+xf86libinput_post_tablet_motion(InputInfoPtr pInfo,
+				struct libinput_event_tablet_tool *event);
 
 static inline int
 use_server_fd(const InputInfoPtr pInfo) {
@@ -1716,11 +1720,14 @@ static enum event_handling
 xf86libinput_handle_tablet_tip(InputInfoPtr pInfo,
 			       struct libinput_event_tablet_tool *event)
 {
+	DeviceIntPtr pDev = pInfo->dev;
 	enum libinput_tablet_tool_tip_state state;
 	const BOOL is_absolute = TRUE;
 
 	if (xf86libinput_tool_queue_event(event))
 		return EVENT_QUEUED;
+
+	xf86libinput_post_tablet_motion(pDev->public.devicePrivate, event);
 
 	state = libinput_event_tablet_tool_get_tip_state(event);
 
@@ -1776,8 +1783,8 @@ xf86libinput_apply_area(InputInfoPtr pInfo, double *x, double *y)
 	*y = sy;
 }
 
-static enum event_handling
-xf86libinput_handle_tablet_axis(InputInfoPtr pInfo,
+static void
+xf86libinput_post_tablet_motion(InputInfoPtr pInfo,
 				struct libinput_event_tablet_tool *event)
 {
 	DeviceIntPtr dev = pInfo->dev;
@@ -1786,9 +1793,6 @@ xf86libinput_handle_tablet_axis(InputInfoPtr pInfo,
 	struct libinput_tablet_tool *tool;
 	double value;
 	double x, y;
-
-	if (xf86libinput_tool_queue_event(event))
-		return EVENT_QUEUED;
 
 	x = libinput_event_tablet_tool_get_x_transformed(event,
 							 TABLET_AXIS_MAX);
@@ -1839,13 +1843,23 @@ xf86libinput_handle_tablet_axis(InputInfoPtr pInfo,
 		default:
 			xf86IDrvMsg(pInfo, X_ERROR,
 				    "Invalid rotation axis on tool\n");
-			return EVENT_HANDLED;
+			return;
 		}
 
 		valuator_mask_set_double(mask, valuator, value);
 	}
 
 	xf86PostMotionEventM(dev, Absolute, mask);
+}
+
+static enum event_handling
+xf86libinput_handle_tablet_axis(InputInfoPtr pInfo,
+				struct libinput_event_tablet_tool *event)
+{
+	if (xf86libinput_tool_queue_event(event))
+		return EVENT_QUEUED;
+
+	xf86libinput_post_tablet_motion(pInfo, event);
 
 	return EVENT_HANDLED;
 }
@@ -1976,6 +1990,13 @@ xf86libinput_handle_tablet_proximity(InputInfoPtr pInfo,
 	valuator_mask_set_double(mask, 1, y);
 
 	xf86PostProximityEventM(pDev, in_prox, mask);
+
+	/* We have to send an extra motion event after proximity to make
+	 * sure the client got the updated x/y coordinates, especially if
+	 * they don't handle proximity events (XI2).
+	 */
+	if (in_prox)
+		xf86libinput_post_tablet_motion(pDev->public.devicePrivate, event);
 
 	return EVENT_HANDLED;
 }
@@ -5217,6 +5238,19 @@ LibinputInitTabletAreaRatioProperty(DeviceIntPtr dev,
 					       2, data);
 }
 
+static inline bool
+subdevice_filter_for_capabilities(DeviceIntPtr dev,
+				  uint32_t capabilities)
+{
+	InputInfoPtr pInfo  = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+
+	if (!xf86libinput_is_subdevice(pInfo))
+		return false;
+
+	return !(driver_data->capabilities & capabilities);
+}
+
 static void
 LibinputInitProperty(DeviceIntPtr dev)
 {
@@ -5229,21 +5263,35 @@ LibinputInitProperty(DeviceIntPtr dev)
 
 	prop_float = XIGetKnownProperty("FLOAT");
 
-	LibinputInitTapProperty(dev, driver_data, device);
-	LibinputInitTapDragProperty(dev, driver_data, device);
-	LibinputInitTapDragLockProperty(dev, driver_data, device);
-	LibinputInitTapButtonmapProperty(dev, driver_data, device);
-	LibinputInitCalibrationProperty(dev, driver_data, device);
-	LibinputInitAccelProperty(dev, driver_data, device);
-	LibinputInitNaturalScrollProperty(dev, driver_data, device);
+	/* On a subdevice, we likely only have a keyboard, so filter out the
+	 * properties for the capabilities we don't have */
+	if (!subdevice_filter_for_capabilities(dev, CAP_POINTER|CAP_TOUCH)) {
+		LibinputInitTapProperty(dev, driver_data, device);
+		LibinputInitTapDragProperty(dev, driver_data, device);
+		LibinputInitTapDragLockProperty(dev, driver_data, device);
+		LibinputInitTapButtonmapProperty(dev, driver_data, device);
+		LibinputInitNaturalScrollProperty(dev, driver_data, device);
+	}
+
+	if (!subdevice_filter_for_capabilities(dev, CAP_TOUCH|CAP_TABLET)) {
+		LibinputInitCalibrationProperty(dev, driver_data, device);
+		LibinputInitLeftHandedProperty(dev, driver_data, device);
+		LibinputInitAccelProperty(dev, driver_data, device);
+	}
+
+	if (!subdevice_filter_for_capabilities(dev, CAP_POINTER)) {
+		LibinputInitScrollMethodsProperty(dev, driver_data, device);
+		LibinputInitClickMethodsProperty(dev, driver_data, device);
+		LibinputInitMiddleEmulationProperty(dev, driver_data, device);
+		LibinputInitRotationAngleProperty(dev, driver_data, device);
+	}
+
+	if (!subdevice_filter_for_capabilities(dev, CAP_TABLET_PAD)) {
+		LibinputInitModeGroupProperties(dev, driver_data, device);
+	}
+
 	LibinputInitSendEventsProperty(dev, driver_data, device);
-	LibinputInitLeftHandedProperty(dev, driver_data, device);
-	LibinputInitScrollMethodsProperty(dev, driver_data, device);
-	LibinputInitClickMethodsProperty(dev, driver_data, device);
-	LibinputInitMiddleEmulationProperty(dev, driver_data, device);
 	LibinputInitDisableWhileTypingProperty(dev, driver_data, device);
-	LibinputInitModeGroupProperties(dev, driver_data, device);
-	LibinputInitRotationAngleProperty(dev, driver_data, device);
 
 	/* Device node property, read-only  */
 	device_node = driver_data->path;
