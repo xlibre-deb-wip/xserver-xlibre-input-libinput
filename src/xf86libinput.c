@@ -461,19 +461,34 @@ xf86libinput_set_area_ratio(struct xf86libinput *driver_data,
 	}
 }
 
+/**
+ * returns true if the device has one or more of the given capabilities or
+ * if the device isn't a subdevice
+ */
+static inline bool
+subdevice_has_capabilities(DeviceIntPtr dev, uint32_t capabilities)
+{
+	InputInfoPtr pInfo  = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+
+	if (!xf86libinput_is_subdevice(pInfo))
+		return true;
+
+	return !!(driver_data->capabilities & capabilities);
+}
+
 static int
 LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
                  BOOL checkonly);
 static void
 LibinputInitProperty(DeviceIntPtr dev);
 
-static inline void
-LibinputApplyConfig(DeviceIntPtr dev)
+static void
+LibinputApplyConfigSendEvents(DeviceIntPtr dev,
+			      struct xf86libinput *driver_data,
+			      struct libinput_device *device)
 {
 	InputInfoPtr pInfo = dev->public.devicePrivate;
-	struct xf86libinput *driver_data = pInfo->private;
-	struct libinput_device *device = driver_data->shared_device->device;
-	unsigned int scroll_button;
 
 	if (libinput_device_config_send_events_get_modes(device) != LIBINPUT_CONFIG_SEND_EVENTS_ENABLED &&
 	    libinput_device_config_send_events_set_mode(device,
@@ -481,6 +496,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set SendEventsMode %u\n",
 			    driver_data->options.sendevents);
+}
+
+static void
+LibinputApplyConfigNaturalScroll(DeviceIntPtr dev,
+				 struct xf86libinput *driver_data,
+				 struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_scroll_has_natural_scroll(device) &&
 	    libinput_device_config_scroll_set_natural_scroll_enabled(device,
@@ -488,6 +514,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set NaturalScrolling to %d\n",
 			    driver_data->options.natural_scrolling);
+}
+
+static void
+LibinputApplyConfigAccel(DeviceIntPtr dev,
+			 struct xf86libinput *driver_data,
+			 struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_accel_is_available(device) &&
 	    libinput_device_config_accel_set_speed(device,
@@ -516,6 +553,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		}
 		xf86IDrvMsg(pInfo, X_ERROR, "Failed to set profile %s\n", profile);
 	}
+}
+
+static inline void
+LibinputApplyConfigTap(DeviceIntPtr dev,
+		       struct xf86libinput *driver_data,
+		       struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_tap_get_finger_count(device) > 0 &&
 	    libinput_device_config_tap_set_enabled(device,
@@ -552,6 +600,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set Tapping Drag to %d\n",
 			    driver_data->options.tap_drag);
+}
+
+static void
+LibinputApplyConfigCalibration(DeviceIntPtr dev,
+			       struct xf86libinput *driver_data,
+			       struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_TOUCH|CAP_TABLET))
+		return;
 
 	if (libinput_device_config_calibration_has_matrix(device) &&
 	    libinput_device_config_calibration_set_matrix(device,
@@ -564,6 +623,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 			    driver_data->options.matrix[4], driver_data->options.matrix[5],
 			    driver_data->options.matrix[6], driver_data->options.matrix[7],
 			    driver_data->options.matrix[8]);
+}
+
+static void
+LibinputApplyConfigLeftHanded(DeviceIntPtr dev,
+			       struct xf86libinput *driver_data,
+			       struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER|CAP_TABLET))
+		return;
 
 	if (libinput_device_config_left_handed_is_available(device) &&
 	    libinput_device_config_left_handed_set(device,
@@ -571,6 +641,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set LeftHanded to %d\n",
 			    driver_data->options.left_handed);
+}
+
+static void
+LibinputApplyConfigScrollMethod(DeviceIntPtr dev,
+				struct xf86libinput *driver_data,
+				struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_scroll_set_method(device,
 						     driver_data->options.scroll_method) != LIBINPUT_CONFIG_STATUS_SUCCESS) {
@@ -591,12 +672,25 @@ LibinputApplyConfig(DeviceIntPtr dev)
 	}
 
 	if (libinput_device_config_scroll_get_methods(device) & LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) {
+		unsigned int scroll_button;
+
 		scroll_button = btn_xorg2linux(driver_data->options.scroll_button);
 		if (libinput_device_config_scroll_set_button(device, scroll_button) != LIBINPUT_CONFIG_STATUS_SUCCESS)
 			xf86IDrvMsg(pInfo, X_ERROR,
 				    "Failed to set ScrollButton to %u\n",
 				    driver_data->options.scroll_button);
 	}
+}
+
+static void
+LibinputApplyConfigClickMethod(DeviceIntPtr dev,
+			       struct xf86libinput *driver_data,
+			       struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_click_set_method(device,
 						    driver_data->options.click_method) != LIBINPUT_CONFIG_STATUS_SUCCESS) {
@@ -614,6 +708,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 			    "Failed to set click method to %s\n",
 			    method);
 	}
+}
+
+static void
+LibinputApplyConfigMiddleEmulation(DeviceIntPtr dev,
+				   struct xf86libinput *driver_data,
+				   struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_middle_emulation_is_available(device) &&
 	    libinput_device_config_middle_emulation_set_enabled(device,
@@ -621,6 +726,17 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set MiddleEmulation to %d\n",
 			    driver_data->options.middle_emulation);
+}
+
+static void
+LibinputApplyConfigDisableWhileTyping(DeviceIntPtr dev,
+				      struct xf86libinput *driver_data,
+				      struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_dwt_is_available(device) &&
 	    libinput_device_config_dwt_set_enabled(device,
@@ -628,13 +744,43 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set DisableWhileTyping to %d\n",
 			    driver_data->options.disable_while_typing);
+}
+
+static void
+LibinputApplyConfigRotation(DeviceIntPtr dev,
+			    struct xf86libinput *driver_data,
+			    struct libinput_device *device)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_rotation_is_available(device) &&
 	    libinput_device_config_rotation_set_angle(device, driver_data->options.rotation_angle) != LIBINPUT_CONFIG_STATUS_SUCCESS)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set RotationAngle to %.2f\n",
 			    driver_data->options.rotation_angle);
+}
 
+static inline void
+LibinputApplyConfig(DeviceIntPtr dev)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->shared_device->device;
+
+	LibinputApplyConfigSendEvents(dev, driver_data, device);
+	LibinputApplyConfigNaturalScroll(dev, driver_data, device);
+	LibinputApplyConfigAccel(dev, driver_data, device);
+	LibinputApplyConfigTap(dev, driver_data, device);
+	LibinputApplyConfigCalibration(dev, driver_data, device);
+	LibinputApplyConfigLeftHanded(dev, driver_data, device);
+	LibinputApplyConfigScrollMethod(dev, driver_data, device);
+	LibinputApplyConfigClickMethod(dev, driver_data, device);
+	LibinputApplyConfigMiddleEmulation(dev, driver_data, device);
+	LibinputApplyConfigDisableWhileTyping(dev, driver_data, device);
+	LibinputApplyConfigRotation(dev, driver_data, device);
 }
 
 static int
@@ -4429,6 +4575,9 @@ LibinputInitTapProperty(DeviceIntPtr dev,
 {
 	BOOL tap = driver_data->options.tapping;
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
 	if (libinput_device_config_tap_get_finger_count(device) == 0)
 		return;
 
@@ -4455,6 +4604,9 @@ LibinputInitTapDragProperty(DeviceIntPtr dev,
 {
 	BOOL drag = driver_data->options.tap_drag;
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
 	if (libinput_device_config_tap_get_finger_count(device) == 0)
 		return;
 
@@ -4478,6 +4630,9 @@ LibinputInitTapDragLockProperty(DeviceIntPtr dev,
 				struct libinput_device *device)
 {
 	BOOL drag_lock = driver_data->options.tap_drag_lock;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (libinput_device_config_tap_get_finger_count(device) == 0)
 		return;
@@ -4503,6 +4658,9 @@ LibinputInitTapButtonmapProperty(DeviceIntPtr dev,
 {
 	enum libinput_config_tap_button_map map;
 	BOOL data[2] = {0};
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	map = driver_data->options.tap_button_map;
 
@@ -4554,6 +4712,9 @@ LibinputInitCalibrationProperty(DeviceIntPtr dev,
 {
 	float calibration[9];
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER|CAP_TOUCH|CAP_TABLET))
+		return;
+
 	if (!libinput_device_config_calibration_has_matrix(device))
 		return;
 
@@ -4590,6 +4751,9 @@ LibinputInitAccelProperty(DeviceIntPtr dev,
 	uint32_t profile_mask;
 	enum libinput_config_accel_profile profile;
 	BOOL profiles[2] = {FALSE};
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (!libinput_device_config_accel_is_available(device) ||
 	    driver_data->capabilities & CAP_TABLET)
@@ -4678,6 +4842,9 @@ LibinputInitNaturalScrollProperty(DeviceIntPtr dev,
 {
 	BOOL natural_scroll = driver_data->options.natural_scrolling;
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
 	if (!libinput_device_config_scroll_has_natural_scroll(device))
 		return;
 
@@ -4760,6 +4927,12 @@ LibinputInitLeftHandedProperty(DeviceIntPtr dev,
 {
 	BOOL left_handed = driver_data->options.left_handed;
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER|CAP_TABLET))
+		return;
+
+	if (prop_left_handed != 0)
+		return;
+
 	if (!libinput_device_config_left_handed_is_available(device) ||
 	    driver_data->capabilities & CAP_TABLET)
 		return;
@@ -4786,6 +4959,9 @@ LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
 	uint32_t scroll_methods;
 	enum libinput_config_scroll_method method;
 	BOOL methods[3] = {FALSE};
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	scroll_methods = libinput_device_config_scroll_get_methods(device);
 	if (scroll_methods == LIBINPUT_CONFIG_SCROLL_NO_SCROLL)
@@ -4874,6 +5050,9 @@ LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 	enum libinput_config_click_method method;
 	BOOL methods[2] = {FALSE};
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
 	click_methods = libinput_device_config_click_get_methods(device);
 	if (click_methods == LIBINPUT_CONFIG_CLICK_METHOD_NONE)
 		return;
@@ -4942,6 +5121,9 @@ LibinputInitMiddleEmulationProperty(DeviceIntPtr dev,
 {
 	BOOL middle = driver_data->options.middle_emulation;
 
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
 	if (!libinput_device_config_middle_emulation_is_available(device))
 		return;
 
@@ -4967,6 +5149,9 @@ LibinputInitDisableWhileTypingProperty(DeviceIntPtr dev,
 				       struct libinput_device *device)
 {
 	BOOL dwt = driver_data->options.disable_while_typing;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
 
 	if (!libinput_device_config_dwt_is_available(device))
 		return;
@@ -4999,6 +5184,9 @@ LibinputInitModeGroupProperties(DeviceIntPtr dev,
 		      current[4] = {0},
 		      associations[MAX_BUTTONS] = {0};
 	int g, b, r, s;
+
+	if (!subdevice_has_capabilities(dev, CAP_TABLET_PAD))
+		return;
 
 	if (!libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TABLET_PAD))
 		return;
@@ -5238,19 +5426,6 @@ LibinputInitTabletAreaRatioProperty(DeviceIntPtr dev,
 					       2, data);
 }
 
-static inline bool
-subdevice_filter_for_capabilities(DeviceIntPtr dev,
-				  uint32_t capabilities)
-{
-	InputInfoPtr pInfo  = dev->public.devicePrivate;
-	struct xf86libinput *driver_data = pInfo->private;
-
-	if (!xf86libinput_is_subdevice(pInfo))
-		return false;
-
-	return !(driver_data->capabilities & capabilities);
-}
-
 static void
 LibinputInitProperty(DeviceIntPtr dev)
 {
@@ -5263,35 +5438,21 @@ LibinputInitProperty(DeviceIntPtr dev)
 
 	prop_float = XIGetKnownProperty("FLOAT");
 
-	/* On a subdevice, we likely only have a keyboard, so filter out the
-	 * properties for the capabilities we don't have */
-	if (!subdevice_filter_for_capabilities(dev, CAP_POINTER|CAP_TOUCH)) {
-		LibinputInitTapProperty(dev, driver_data, device);
-		LibinputInitTapDragProperty(dev, driver_data, device);
-		LibinputInitTapDragLockProperty(dev, driver_data, device);
-		LibinputInitTapButtonmapProperty(dev, driver_data, device);
-		LibinputInitNaturalScrollProperty(dev, driver_data, device);
-	}
-
-	if (!subdevice_filter_for_capabilities(dev, CAP_TOUCH|CAP_TABLET)) {
-		LibinputInitCalibrationProperty(dev, driver_data, device);
-		LibinputInitLeftHandedProperty(dev, driver_data, device);
-		LibinputInitAccelProperty(dev, driver_data, device);
-	}
-
-	if (!subdevice_filter_for_capabilities(dev, CAP_POINTER)) {
-		LibinputInitScrollMethodsProperty(dev, driver_data, device);
-		LibinputInitClickMethodsProperty(dev, driver_data, device);
-		LibinputInitMiddleEmulationProperty(dev, driver_data, device);
-		LibinputInitRotationAngleProperty(dev, driver_data, device);
-	}
-
-	if (!subdevice_filter_for_capabilities(dev, CAP_TABLET_PAD)) {
-		LibinputInitModeGroupProperties(dev, driver_data, device);
-	}
-
-	LibinputInitSendEventsProperty(dev, driver_data, device);
+	LibinputInitTapProperty(dev, driver_data, device);
+	LibinputInitTapDragProperty(dev, driver_data, device);
+	LibinputInitTapDragLockProperty(dev, driver_data, device);
+	LibinputInitTapButtonmapProperty(dev, driver_data, device);
+	LibinputInitNaturalScrollProperty(dev, driver_data, device);
 	LibinputInitDisableWhileTypingProperty(dev, driver_data, device);
+	LibinputInitScrollMethodsProperty(dev, driver_data, device);
+	LibinputInitClickMethodsProperty(dev, driver_data, device);
+	LibinputInitMiddleEmulationProperty(dev, driver_data, device);
+	LibinputInitRotationAngleProperty(dev, driver_data, device);
+	LibinputInitAccelProperty(dev, driver_data, device);
+	LibinputInitCalibrationProperty(dev, driver_data, device);
+	LibinputInitLeftHandedProperty(dev, driver_data, device);
+	LibinputInitModeGroupProperties(dev, driver_data, device);
+	LibinputInitSendEventsProperty(dev, driver_data, device);
 
 	/* Device node property, read-only  */
 	device_node = driver_data->path;
