@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [0.27.1],
+        [0.28.0],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -46,6 +46,23 @@ XORG_DEFAULT_OPTIONS
 # Obtain compiler/linker options from server and required extensions
 PKG_CHECK_MODULES(XORG, [xorg-server >= 1.10] xproto [inputproto >= 2.2])
 PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.4.901])
+
+OLD_LIBS=$LIBS
+OLD_CFLAGS=$CFLAGS
+LIBS="$LIBS $LIBINPUT_LIBS"
+CFLAGS="$CFLAGS $LIBINPUT_CFLAGS"
+AC_MSG_CHECKING([if libinput_device_touch_get_touch_count is available])
+AC_LINK_IFELSE(
+               [AC_LANG_PROGRAM([[#include <libinput.h>]],
+                                [[libinput_device_touch_get_touch_count(NULL)]])],
+               [AC_MSG_RESULT([yes])
+                AC_DEFINE(HAVE_LIBINPUT_TOUCH_COUNT, [1],
+                          [libinput_device_touch_get_touch_count() is available])
+                [libinput_have_touch_count=yes]],
+               [AC_MSG_RESULT([no])
+                [libinput_have_touch_count=no]])
+LIBS=$OLD_LIBS
+CFLAGS=$OLD_CFLAGS
 
 # Define a configure option for an alternate input module directory
 AC_ARG_WITH(xorg-module-dir,

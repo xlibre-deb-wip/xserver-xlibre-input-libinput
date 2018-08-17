@@ -15,11 +15,11 @@ libinput \- libinput-based X.Org input driver
 
 .SH NOTE
 This is the man page for the X input driver. If you are looking for the
-library documentation, go to 
+library documentation, go to
 .BI http://wayland.freedesktop.org/libinput/doc/
 
 .SH DESCRIPTION
-.B libinput 
+.B libinput
 is an __xservername__ input driver based on libinput.  It
 therefore supports all input devices that libinput can handle, including
 most mice, keyboards, tablets and touchscreens.
@@ -37,7 +37,7 @@ Please refer to __xconfigfile__(__filemansuffix__) for general configuration
 details and for options that can be used with all input drivers.  This
 section only covers configuration details specific to this driver.
 .PP
-The following driver 
+The following driver
 .B Options
 are supported:
 .TP 7
@@ -277,7 +277,7 @@ enabled on this device.
 .BI "libinput Tablet Tool Pressurecurve"
 4 32-bit float values [0.0 to 1.0]. See section
 .B TABLET TOOL PRESSURE CURVE
-.TP7
+.TP 7
 .BI "libinput Tablet Tool Area Ratio"
 2 32-bit values, corresponding to width and height. Special value 0, 0
 resets to the default ratio. See section

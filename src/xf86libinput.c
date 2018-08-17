@@ -1058,11 +1058,13 @@ xf86libinput_init_touch(InputInfoPtr pInfo)
 {
 	DeviceIntPtr dev = pInfo->dev;
 	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->shared_device->device;
 	int min, max, res;
 	unsigned char btnmap[MAX_BUTTONS + 1];
 	Atom btnlabels[MAX_BUTTONS];
 	Atom axislabels[TOUCHPAD_NUM_AXES];
 	int nbuttons = 7;
+	int ntouches = TOUCH_MAX_SLOTS;
 
 	init_button_map(btnmap, ARRAY_SIZE(btnmap));
 	init_button_labels(btnlabels, ARRAY_SIZE(btnlabels));
@@ -1086,7 +1088,13 @@ xf86libinput_init_touch(InputInfoPtr pInfo)
 	xf86InitValuatorAxisStruct(dev, 1,
 			           XIGetKnownProperty(AXIS_LABEL_PROP_ABS_MT_POSITION_Y),
 				   min, max, res * 1000, 0, res * 1000, Absolute);
-	InitTouchClassDeviceStruct(dev, TOUCH_MAX_SLOTS, XIDirectTouch, 2);
+
+#if HAVE_LIBINPUT_TOUCH_COUNT
+	ntouches = libinput_device_touch_get_touch_count(device);
+	if (ntouches == 0) /* unknown -  mtdev */
+		ntouches = TOUCH_MAX_SLOTS;
+#endif
+	InitTouchClassDeviceStruct(dev, ntouches, XIDirectTouch, 2);
 
 }
 
@@ -2684,9 +2692,9 @@ xf86libinput_parse_calibration_option(InputInfoPtr pInfo,
 	libinput_device_config_calibration_get_matrix(device, matrix);
 	memcpy(matrix_out, matrix, sizeof(matrix));
 
-	str = xf86CheckStrOption(pInfo->options,
-				 "CalibrationMatrix",
-				 NULL);
+	str = xf86SetStrOption(pInfo->options,
+			       "CalibrationMatrix",
+			       NULL);
 	if (!str)
 		return;
 
@@ -2914,7 +2922,7 @@ xf86libinput_parse_draglock_option(InputInfoPtr pInfo,
 {
 	char *str;
 
-	str = xf86CheckStrOption(pInfo->options, "DragLockButtons",NULL);
+	str = xf86SetStrOption(pInfo->options, "DragLockButtons", NULL);
 	if (draglock_init_from_string(&driver_data->draglock, str) != 0)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Invalid DragLockButtons option: \"%s\"\n",
@@ -5318,7 +5326,7 @@ LibinputInitDragLockProperty(DeviceIntPtr dev,
 		break;
 	case DRAGLOCK_PAIRS:
 		sz = draglock_get_pairs(&driver_data->draglock,
-					dl_values, sizeof(dl_values));
+					dl_values, ARRAY_SIZE(dl_values));
 		break;
 	default:
 		xf86IDrvMsg(dev->public.devicePrivate,
