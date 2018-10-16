@@ -1705,7 +1705,7 @@ xf86libinput_handle_touch(InputInfoPtr pInfo,
 	if ((driver_data->capabilities & CAP_TOUCH) == 0)
 		return;
 
-	slot = libinput_event_touch_get_slot(event);
+	slot = libinput_event_touch_get_seat_slot(event);
 
 	switch (event_type) {
 		case LIBINPUT_EVENT_TOUCH_DOWN:
@@ -2092,7 +2092,7 @@ static inline DeviceIntPtr
 xf86libinput_find_device_for_tool(InputInfoPtr pInfo,
 				  struct libinput_tablet_tool *tool)
 {
-	struct xf86libinput *dev = pInfo->private;
+	struct xf86libinput *dev;
 	struct xf86libinput *driver_data = pInfo->private;
 	struct xf86libinput_device *shared_device = driver_data->shared_device;
 	uint64_t serial = libinput_tablet_tool_get_serial(tool);
