@@ -128,11 +128,10 @@ struct xf86libinput {
 	uint32_t capabilities;
 
 	struct {
-		int vdist;
-		int hdist;
-
-		double vdist_fraction;
-		double hdist_fraction;
+		struct scroll_axis {
+			int dist;
+			double fraction;
+		} v, h;
 	} scroll;
 
 	struct {
@@ -398,7 +397,7 @@ xf86libinput_shared_disable(struct xf86libinput_device *shared_device)
 
 	libinput_device_set_user_data(device, NULL);
 	libinput_path_remove_device(device);
-	device = libinput_device_unref(device);
+	libinput_device_unref(device);
 	shared_device->device = NULL;
 }
 
@@ -936,8 +935,8 @@ xf86libinput_init_pointer(InputInfoPtr pInfo)
 			           XIGetKnownProperty(AXIS_LABEL_PROP_REL_Y),
 				   min, max, res * 1000, 0, res * 1000, Relative);
 
-	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll.hdist, 0);
-	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll.vdist, 0);
+	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll.h.dist, 0);
+	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll.v.dist, 0);
 
 	return Success;
 }
@@ -984,8 +983,8 @@ xf86libinput_init_pointer_absolute(InputInfoPtr pInfo)
 			           XIGetKnownProperty(AXIS_LABEL_PROP_ABS_Y),
 				   min, max, res * 1000, 0, res * 1000, Absolute);
 
-	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll.hdist, 0);
-	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll.vdist, 0);
+	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll.h.dist, 0);
+	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll.v.dist, 0);
 
 	driver_data->has_abs = TRUE;
 
@@ -1565,40 +1564,58 @@ xf86libinput_handle_key(InputInfoPtr pInfo, struct libinput_event_keyboard *even
  * e.g. a 2 degree click angle requires 8 clicks before a legacy event is
  * sent, but each of those clicks will send XI2.1 smooth scroll data for
  * compatible clients.
+ *
+ * Starting with kernel v5.0 we should get REL_WHEEL_HI_RES from those
+ * devices for the fine-grained scrolling and REL_WHEEL for the normal one,
+ * so the use-case above shouldn't matter anymore.
  */
 static inline double
-get_scroll_fraction(struct xf86libinput *driver_data,
-		    struct libinput_event_pointer *event,
-		    enum libinput_pointer_axis axis)
+get_wheel_scroll_value(struct xf86libinput *driver_data,
+		       struct libinput_event_pointer *event,
+		       enum libinput_pointer_axis axis)
 {
-	double *fraction;
+	struct scroll_axis *s;
 	double f;
 	double angle;
 	int discrete;
 
 	switch (axis) {
 	case LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL:
-		fraction = &driver_data->scroll.hdist_fraction;
+		s = &driver_data->scroll.h;
 		break;
 	case LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL:
-		fraction = &driver_data->scroll.vdist_fraction;
+		s = &driver_data->scroll.v;
 		break;
 	default:
 		return 0.0;
 	}
 
-	if (*fraction != 0.0)
-		return *fraction;
-
-	/* Calculate the angle per single scroll event */
 	angle = libinput_event_pointer_get_axis_value(event, axis);
 	discrete = libinput_event_pointer_get_axis_value_discrete(event, axis);
+
+	/* We only need to guess the fraction on the first set of
+	 * scroll events until a discrete value arrives. Once known, we
+	 * re-use the fraction until the device goes away.
+	 */
+	if (s->fraction != 0.0)
+		goto out;
+
+	/* if we get a discrete of 0, assume REL_WHEEL_HI_RES exists and
+	 * normal scroll events are sent correctly, so skip all the
+	 * guesswork.
+	 */
+	if (discrete == 0) {
+		s->fraction = 1.0;
+		goto out;
+	}
+
+	/* Calculate the angle per single scroll event */
 	angle /= discrete;
 
 	/* We only do magic for click angles smaller than 10 degrees */
 	if (angle >= 10) {
-		*fraction = 1.0;
-		return 1.0;
+		s->fraction = 1.0;
+		goto out;
 	}
 
 	/* Figure out something that gets close to 15 degrees (the general
@@ -1609,9 +1626,10 @@ get_scroll_fraction(struct xf86libinput *driver_data,
 	 */
 	f = round(15.0/angle);
 
-	*fraction = f;
+	s->fraction = f;
 
-	return f;
+out:
+	return s->dist/s->fraction * discrete;
 }
 
 static inline bool
@@ -1628,11 +1646,7 @@ calculate_axis_value(struct xf86libinput *driver_data,
 
 	source = libinput_event_pointer_get_axis_source(event);
 	if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
-		double scroll_fraction;
-
-		value = libinput_event_pointer_get_axis_value_discrete(event, axis);
-		scroll_fraction = get_scroll_fraction(driver_data, event, axis);
-		value *= driver_data->scroll.vdist/scroll_fraction;
+		value = get_wheel_scroll_value(driver_data, event, axis);
 	} else {
 		value = libinput_event_pointer_get_axis_value(event, axis);
 	}
@@ -3401,8 +3415,8 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	 * affect touchpad scroll speed. For wheels it doesn't matter as
 	 * we're using the discrete value only.
 	 */
-	driver_data->scroll.vdist = 15;
-	driver_data->scroll.hdist = 15;
+	driver_data->scroll.v.dist = 15;
+	driver_data->scroll.h.dist = 15;
 
 	if (!is_subdevice) {
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER))
@@ -3624,13 +3638,13 @@ update_mode_prop_cb(ClientPtr client, pointer closure)
 	groups[idx] = mode;
 
 	driver_data->allow_mode_group_updates = true;
-	rc = XIChangeDeviceProperty(pInfo->dev,
-				    prop_mode_groups,
-				    XA_INTEGER, 8,
-				    PropModeReplace,
-				    val->size,
-				    groups,
-				    TRUE);
+	XIChangeDeviceProperty(pInfo->dev,
+			       prop_mode_groups,
+			       XA_INTEGER, 8,
+			       PropModeReplace,
+			       val->size,
+			       groups,
+			       TRUE);
 	driver_data->allow_mode_group_updates = false;
 
 out:
