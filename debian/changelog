@@ -1,8 +1,8 @@
-xserver-xorg-input-libinput (0.28.2-2) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (0.28.2-2) unstable; urgency=medium
 
   * Ship configuration snippet in the udeb as well.
 
- -- Cyril Brulebois <kibi@debian.org>  Sun, 31 Mar 2019 01:45:56 +0000
+ -- Cyril Brulebois <kibi@debian.org>  Sun, 31 Mar 2019 01:56:52 +0000
 
 xserver-xorg-input-libinput (0.28.2-1) unstable; urgency=medium
 
