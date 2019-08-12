@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [0.28.2],
+        [0.29.0],
         [https://gitlab.freedesktop.org/xorg/driver/xf86-input-libinput/issues],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -45,7 +45,7 @@ XORG_DEFAULT_OPTIONS
 
 # Obtain compiler/linker options from server and required extensions
 PKG_CHECK_MODULES(XORG, [xorg-server >= 1.10] xproto [inputproto >= 2.2])
-PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.4.901])
+PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.7.0])
 
 OLD_LIBS=$LIBS
 OLD_CFLAGS=$CFLAGS
