@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [0.29.0],
+        [0.30.0],
         [https://gitlab.freedesktop.org/xorg/driver/xf86-input-libinput/issues],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -61,6 +61,17 @@ AC_LINK_IFELSE(
                 [libinput_have_touch_count=yes]],
                [AC_MSG_RESULT([no])
                 [libinput_have_touch_count=no]])
+
+AC_MSG_CHECKING([if libinput_device_config_scroll_get_button_lock is available])
+AC_LINK_IFELSE(
+               [AC_LANG_PROGRAM([[#include <libinput.h>]],
+                                [[libinput_device_config_scroll_get_button_lock(NULL)]])],
+               [AC_MSG_RESULT([yes])
+                AC_DEFINE(HAVE_LIBINPUT_SCROLL_BUTTON_LOCK, [1],
+                          [libinput_device_config_scroll_get_button_lock() is available])
+                [libinput_have_scroll_button_lock=yes]],
+               [AC_MSG_RESULT([no])
+                [libinput_have_scroll_button_lock=no]])
 LIBS=$OLD_LIBS
 CFLAGS=$OLD_CFLAGS
 
