@@ -1,24 +1,26 @@
 /*
+ * SPDX-License-Identifier: MIT
+ *
  * Copyright © 2013-2017 Red Hat, Inc.
  *
- * Permission to use, copy, modify, distribute, and sell this software
- * and its documentation for any purpose is hereby granted without
- * fee, provided that the above copyright notice appear in all copies
- * and that both that copyright notice and this permission notice
- * appear in supporting documentation, and that the name of Red Hat
- * not be used in advertising or publicity pertaining to distribution
- * of the software without specific, written prior permission.  Red
- * Hat makes no representations about the suitability of this software
- * for any purpose.  It is provided "as is" without express or implied
- * warranty.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * THE AUTHORS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
- * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY SPECIAL, INDIRECT OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
- * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
- * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
- * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -45,20 +47,6 @@
 #include "bezier.h"
 #include "draglock.h"
 #include "libinput-properties.h"
-
-#ifndef XI86_SERVER_FD
-#define XI86_SERVER_FD 0x20
-#endif
-
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) * 1000 + GET_ABI_MINOR(ABI_XINPUT_VERSION) > 22000
-#define HAVE_VMASK_UNACCEL 1
-#else
-#undef HAVE_VMASK_UNACCEL
-#endif
-
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 23
-#define HAVE_THREADED_INPUT	1
-#endif
 
 #define TOUCHPAD_NUM_AXES 4 /* x, y, hscroll, vscroll */
 #define TABLET_NUM_BUTTONS 7 /* we need scroll buttons */
@@ -820,13 +808,8 @@ xf86libinput_on(DeviceIntPtr dev)
 	pInfo->fd = libinput_get_fd(libinput);
 
 	if (driver_context.device_enabled_count == 0) {
-#if HAVE_THREADED_INPUT
 		xf86AddEnabledDevice(pInfo);
 		driver_context.registered_InputInfoPtr = pInfo;
-#else
-		/* Can't use xf86AddEnabledDevice on an epollfd */
-		AddEnabledDevice(pInfo->fd);
-#endif
 	}
 
 	driver_context.device_enabled_count++;
@@ -845,11 +828,7 @@ xf86libinput_off(DeviceIntPtr dev)
 	struct xf86libinput_device *shared_device = driver_data->shared_device;
 
 	if (--driver_context.device_enabled_count == 0) {
-#if HAVE_THREADED_INPUT
 		xf86RemoveEnabledDevice(pInfo);
-#else
-		RemoveEnabledDevice(pInfo->fd);
-#endif
 	}
 
 	if (use_server_fd(pInfo)) {
@@ -1075,13 +1054,11 @@ xf86libinput_init_touch(InputInfoPtr pInfo)
 	struct xf86libinput *driver_data = pInfo->private;
 	struct libinput_device *device = driver_data->shared_device->device;
 	int min, max, res;
-	unsigned char btnmap[MAX_BUTTONS + 1];
 	Atom btnlabels[MAX_BUTTONS];
 	Atom axislabels[TOUCHPAD_NUM_AXES];
 	int nbuttons = 7;
 	int ntouches = TOUCH_MAX_SLOTS;
 
-	init_button_map(btnmap, ARRAY_SIZE(btnmap));
 	init_button_labels(btnlabels, ARRAY_SIZE(btnlabels));
 	init_axis_labels(axislabels, ARRAY_SIZE(axislabels));
 
@@ -1104,11 +1081,9 @@ xf86libinput_init_touch(InputInfoPtr pInfo)
 			           XIGetKnownProperty(AXIS_LABEL_PROP_ABS_MT_POSITION_Y),
 				   min, max, res * 1000, 0, res * 1000, Absolute);
 
-#if HAVE_LIBINPUT_TOUCH_COUNT
 	ntouches = libinput_device_touch_get_touch_count(device);
 	if (ntouches == 0) /* unknown -  mtdev */
 		ntouches = TOUCH_MAX_SLOTS;
-#endif
 	InitTouchClassDeviceStruct(dev, ntouches, XIDirectTouch, 2);
 
 }
@@ -1218,7 +1193,6 @@ xf86libinput_init_tablet(InputInfoPtr pInfo)
 	struct xf86libinput *driver_data = pInfo->private;
 	struct libinput_tablet_tool *tool;
 	int min, max, res;
-	unsigned char btnmap[TABLET_NUM_BUTTONS];
 	Atom btnlabels[TABLET_NUM_BUTTONS] = {0};
 	Atom axislabels[TOUCHPAD_NUM_AXES] = {0};
 	int nbuttons = TABLET_NUM_BUTTONS;
@@ -1227,8 +1201,6 @@ xf86libinput_init_tablet(InputInfoPtr pInfo)
 	BUG_RETURN(driver_data->tablet_tool == NULL);
 
 	tool = driver_data->tablet_tool;
-
-	init_button_map(btnmap, ARRAY_SIZE(btnmap));
 
 	if (libinput_tablet_tool_has_pressure(tool))
 		naxes++;
@@ -1285,14 +1257,12 @@ xf86libinput_init_tablet_pad(InputInfoPtr pInfo)
 	struct xf86libinput *driver_data = pInfo->private;
 	struct libinput_device *device = driver_data->shared_device->device;
 	int min, max, res;
-	unsigned char btnmap[MAX_BUTTONS];
 	Atom btnlabels[MAX_BUTTONS] = {0};
 	Atom axislabels[TOUCHPAD_NUM_AXES] = {0};
 	int nbuttons;
 	int naxes = 7;
 
 	nbuttons = libinput_device_tablet_pad_get_num_buttons(device) + 4;
-	init_button_map(btnmap, nbuttons);
 
 	InitPointerDeviceStruct((DevicePtr)dev,
 				driver_data->options.btnmap,
@@ -1407,19 +1377,11 @@ swap_registered_device(InputInfoPtr pInfo)
 	while (next == pInfo || !is_libinput_device(next))
 		next = next->next;
 
-#if HAVE_THREADED_INPUT
 	input_lock();
-#else
-	int sigstate = xf86BlockSIGIO();
-#endif
 	xf86RemoveEnabledDevice(pInfo);
 	xf86AddEnabledDevice(next);
 	driver_context.registered_InputInfoPtr = next;
-#if HAVE_THREADED_INPUT
 	input_unlock();
-#else
-	xf86UnblockSIGIO(sigstate);
-#endif
 }
 
 static void
@@ -1488,7 +1450,6 @@ xf86libinput_handle_motion(InputInfoPtr pInfo, struct libinput_event_pointer *ev
 
 	valuator_mask_zero(mask);
 
-#if HAVE_VMASK_UNACCEL
 	{
 		double ux, uy;
 
@@ -1498,10 +1459,6 @@ xf86libinput_handle_motion(InputInfoPtr pInfo, struct libinput_event_pointer *ev
 		valuator_mask_set_unaccelerated(mask, 0, x, ux);
 		valuator_mask_set_unaccelerated(mask, 1, y, uy);
 	}
-#else
-	valuator_mask_set_double(mask, 0, x);
-	valuator_mask_set_double(mask, 1, y);
-#endif
 	xf86PostMotionEventM(dev, Relative, mask);
 }
 
@@ -1743,6 +1700,7 @@ xf86libinput_handle_touch(InputInfoPtr pInfo,
 			touchids[slot] = next_touchid++;
 			break;
 		case LIBINPUT_EVENT_TOUCH_UP:
+		case LIBINPUT_EVENT_TOUCH_CANCEL:
 			type = XI_TouchEnd;
 			break;
 		case LIBINPUT_EVENT_TOUCH_MOTION:
@@ -1750,11 +1708,11 @@ xf86libinput_handle_touch(InputInfoPtr pInfo,
 			break;
 		default:
 			return;
-	};
+	}
 
 	valuator_mask_zero(m);
 
-	if (event_type != LIBINPUT_EVENT_TOUCH_UP) {
+	if (type != XI_TouchEnd) {
 		val = libinput_event_touch_get_x_transformed(event, TOUCH_AXIS_MAX);
 		valuator_mask_set_double(m, 0, val);
 
@@ -3239,20 +3197,12 @@ xf86libinput_hotplug_device(struct xf86libinput_hotplug_info *hotplug)
 {
 	DeviceIntPtr dev;
 
-#if HAVE_THREADED_INPUT
 	input_lock();
-#else
-	int sigstate = xf86BlockSIGIO();
-#endif
 	if (NewInputDeviceRequest(hotplug->input_options,
 				  hotplug->attrs,
 				  &dev) != Success)
 		dev = NULL;
-#if HAVE_THREADED_INPUT
 	input_unlock();
-#else
-	xf86UnblockSIGIO(sigstate);
-#endif
 
 	input_option_free_list(&hotplug->input_options);
 	FreeInputAttributes(hotplug->attrs);
@@ -3552,9 +3502,7 @@ InputDriverRec xf86libinput_driver = {
 	.UnInit		= xf86libinput_uninit,
 	.module		= NULL,
 	.default_options= NULL,
-#ifdef XI86_DRV_CAP_SERVER_FD
 	.capabilities	= XI86_DRV_CAP_SERVER_FD
-#endif
 };
 
 static XF86ModuleVersionInfo xf86libinput_version_info = {
@@ -3864,9 +3812,13 @@ LibinputSetPropertyTapButtonmap(DeviceIntPtr dev,
 
 	data = (BOOL*)val->data;
 
-	if (checkonly &&
-	    ((data[0] && data[1]) || (!data[0] && !data[1])))
+	if (checkonly) {
+	    if ((data[0] && data[1]) || (!data[0] && !data[1]))
 		return BadValue;
+
+	    if (!xf86libinput_check_device (dev, atom))
+		return BadMatch;
+	}
 
 	if (data[0])
 		map = LIBINPUT_CONFIG_TAP_MAP_LRM;

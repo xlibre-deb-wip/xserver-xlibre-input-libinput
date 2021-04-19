@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [0.30.0],
+        [1.0.1],
         [https://gitlab.freedesktop.org/xorg/driver/xf86-input-libinput/issues],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -38,29 +38,19 @@ AC_DISABLE_STATIC
 LT_INIT
 
 # Initialize X.Org macros 1.8 or later for MAN_SUBSTS set by XORG_MANPAGE_SECTIONS
-m4_ifndef([XORG_MACROS_VERSION], 
+m4_ifndef([XORG_MACROS_VERSION],
           [m4_fatal([must install xorg-macros 1.8 or later before running autoconf/autogen])])
 XORG_MACROS_VERSION(1.8)
 XORG_DEFAULT_OPTIONS
 
 # Obtain compiler/linker options from server and required extensions
-PKG_CHECK_MODULES(XORG, [xorg-server >= 1.10] xproto [inputproto >= 2.2])
-PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.7.0])
+PKG_CHECK_MODULES(XORG, [xorg-server >= 1.19] xproto [inputproto >= 2.2])
+PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.11.0])
 
 OLD_LIBS=$LIBS
 OLD_CFLAGS=$CFLAGS
 LIBS="$LIBS $LIBINPUT_LIBS"
 CFLAGS="$CFLAGS $LIBINPUT_CFLAGS"
-AC_MSG_CHECKING([if libinput_device_touch_get_touch_count is available])
-AC_LINK_IFELSE(
-               [AC_LANG_PROGRAM([[#include <libinput.h>]],
-                                [[libinput_device_touch_get_touch_count(NULL)]])],
-               [AC_MSG_RESULT([yes])
-                AC_DEFINE(HAVE_LIBINPUT_TOUCH_COUNT, [1],
-                          [libinput_device_touch_get_touch_count() is available])
-                [libinput_have_touch_count=yes]],
-               [AC_MSG_RESULT([no])
-                [libinput_have_touch_count=no]])
 
 AC_MSG_CHECKING([if libinput_device_config_scroll_get_button_lock is available])
 AC_LINK_IFELSE(
