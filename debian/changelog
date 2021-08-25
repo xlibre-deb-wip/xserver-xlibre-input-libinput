@@ -1,4 +1,4 @@
-xserver-xorg-input-libinput (1.0.1-1) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (1.1.0-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * control: Migrate to x11proto-dev.
