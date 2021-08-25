@@ -52,6 +52,9 @@
 #define TABLET_NUM_BUTTONS 7 /* we need scroll buttons */
 #define TOUCH_MAX_SLOTS 15
 #define XORG_KEYCODE_OFFSET 8
+#define SCROLL_INCREMENT 15
+#define TOUCHPAD_SCROLL_DIST_MIN 10 /* in libinput pixels */
+#define TOUCHPAD_SCROLL_DIST_MAX 50 /* in libinput pixels */
 
 #define streq(a, b) (strcmp(a, b) == 0)
 #define strneq(a, b, n) (strncmp(a, b, n) == 0)
@@ -146,6 +149,7 @@ struct xf86libinput {
 		CARD32 sendevents;
 		CARD32 scroll_button; /* xorg button number */
 		BOOL scroll_buttonlock;
+		uint32_t scroll_pixel_distance;
 		float speed;
 		float matrix[9];
 		enum libinput_config_scroll_method scroll_method;
@@ -1621,7 +1625,17 @@ calculate_axis_value(struct xf86libinput *driver_data,
 	if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
 		value = get_wheel_scroll_value(driver_data, event, axis);
 	} else {
+		double dist = driver_data->options.scroll_pixel_distance;
+		assert(dist != 0.0);
+
 		value = libinput_event_pointer_get_axis_value(event, axis);
+		/* We need to scale this value into our scroll increment range
+		 * because that one is constant for the lifetime of the
+		 * device. The user may change the ScrollPixelDistance
+		 * though, so where we have a dist of 10 but an increment of
+		 * 15, we need to scale from 0..10 into 0..15.
+		 */
+		value = value/dist * SCROLL_INCREMENT;
 	}
 
 	*value_out = value;
@@ -2826,6 +2840,39 @@ xf86libinput_parse_scrollbuttonlock_option(InputInfoPtr pInfo,
 	return buttonlock;
 }
 
+static inline bool
+xf86libinput_want_scroll_distance_option(struct libinput_device *device)
+{
+	uint32_t methods =
+	    LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN |
+	    LIBINPUT_CONFIG_SCROLL_2FG |
+	    LIBINPUT_CONFIG_SCROLL_EDGE;
+
+	if ((libinput_device_config_scroll_get_methods(device) & methods) == 0)
+		return false;
+
+	return true;
+}
+
+static inline uint32_t
+xf86libinput_parse_scroll_pixel_distance_option(InputInfoPtr pInfo,
+						struct libinput_device *device)
+{
+	uint32_t dflt = SCROLL_INCREMENT;
+	uint32_t dist;
+
+	if (!xf86libinput_want_scroll_distance_option(device))
+		return dflt;
+
+	dist = xf86SetIntOption(pInfo->options, "ScrollPixelDistance", dflt);
+	if (dist < TOUCHPAD_SCROLL_DIST_MIN || dist > TOUCHPAD_SCROLL_DIST_MAX) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Invalid ScrollPixelDistance %d\n", dist);
+		dist = dflt;
+	}
+	return dist;
+}
+
 static inline unsigned int
 xf86libinput_parse_clickmethod_option(InputInfoPtr pInfo,
 				      struct libinput_device *device)
@@ -3107,6 +3154,7 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 	options->scroll_method = xf86libinput_parse_scroll_option(pInfo, device);
 	options->scroll_button = xf86libinput_parse_scrollbutton_option(pInfo, device);
 	options->scroll_buttonlock = xf86libinput_parse_scrollbuttonlock_option(pInfo, device);
+	options->scroll_pixel_distance = xf86libinput_parse_scroll_pixel_distance_option(pInfo, device);
 	options->click_method = xf86libinput_parse_clickmethod_option(pInfo, device);
 	options->middle_emulation = xf86libinput_parse_middleemulation_option(pInfo, device);
 	options->disable_while_typing = xf86libinput_parse_disablewhiletyping_option(pInfo, device);
@@ -3420,8 +3468,8 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	 * affect touchpad scroll speed. For wheels it doesn't matter as
 	 * we're using the discrete value only.
 	 */
-	driver_data->scroll.v.dist = 15;
-	driver_data->scroll.h.dist = 15;
+	driver_data->scroll.v.dist = SCROLL_INCREMENT;
+	driver_data->scroll.h.dist = SCROLL_INCREMENT;
 
 	if (!is_subdevice) {
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER))
@@ -3563,6 +3611,8 @@ static Atom prop_scroll_button;
 static Atom prop_scroll_button_default;
 static Atom prop_scroll_buttonlock;
 static Atom prop_scroll_buttonlock_default;
+static Atom prop_scroll_pixel_distance;
+static Atom prop_scroll_pixel_distance_default;
 static Atom prop_click_methods_available;
 static Atom prop_click_method_enabled;
 static Atom prop_click_method_default;
@@ -3684,7 +3734,7 @@ update_mode_prop(InputInfoPtr pInfo,
 }
 
 static inline BOOL
-xf86libinput_check_device (DeviceIntPtr dev,
+xf86libinput_check_device(DeviceIntPtr dev,
 			   Atom atom)
 {
 	InputInfoPtr pInfo = dev->public.devicePrivate;
@@ -3722,7 +3772,7 @@ LibinputSetPropertyTap(DeviceIntPtr dev,
 		if (*data != 0 && *data != 1)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		if (libinput_device_config_tap_get_finger_count(device) == 0)
@@ -3816,7 +3866,7 @@ LibinputSetPropertyTapButtonmap(DeviceIntPtr dev,
 	    if ((data[0] && data[1]) || (!data[0] && !data[1]))
 		return BadValue;
 
-	    if (!xf86libinput_check_device (dev, atom))
+	    if (!xf86libinput_check_device(dev, atom))
 		return BadMatch;
 	}
 
@@ -3855,7 +3905,7 @@ LibinputSetPropertyCalibration(DeviceIntPtr dev,
 		    data[8] != 1.0)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		if (!libinput_device_config_calibration_has_matrix(device))
@@ -3889,7 +3939,7 @@ LibinputSetPropertyAccel(DeviceIntPtr dev,
 		if (*data < -1.0 || *data > 1.0)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		if (libinput_device_config_accel_is_available(device) == 0)
@@ -3929,7 +3979,7 @@ LibinputSetPropertyAccelProfile(DeviceIntPtr dev,
 		if (__builtin_popcount(profiles) > 1)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		supported = libinput_device_config_accel_get_profiles(device);
@@ -3962,7 +4012,7 @@ LibinputSetPropertyNaturalScroll(DeviceIntPtr dev,
 		if (*data != 0 && *data != 1)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		if (libinput_device_config_scroll_has_natural_scroll(device) == 0)
@@ -3999,7 +4049,7 @@ LibinputSetPropertySendEvents(DeviceIntPtr dev,
 	if (checkonly) {
 		uint32_t supported;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		supported = libinput_device_config_send_events_get_modes(device);
@@ -4033,7 +4083,7 @@ LibinputSetPropertyLeftHanded(DeviceIntPtr dev,
 		int supported;
 		int left_handed = *data;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		supported = libinput_device_config_left_handed_is_available(device);
@@ -4097,7 +4147,7 @@ LibinputSetPropertyScrollMethods(DeviceIntPtr dev,
 		if (__builtin_popcount(modes) > 1)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		supported = libinput_device_config_scroll_get_methods(device);
@@ -4130,7 +4180,7 @@ LibinputSetPropertyScrollButton(DeviceIntPtr dev,
 		uint32_t button = *data;
 		uint32_t supported;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		supported = libinput_device_pointer_has_button(device,
@@ -4162,7 +4212,7 @@ LibinputSetPropertyScrollButtonLock(DeviceIntPtr dev,
 		if (enabled != 0 && enabled != 1)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 	} else {
 		driver_data->options.scroll_buttonlock = enabled;
@@ -4371,10 +4421,38 @@ LibinputSetPropertyHorizScroll(DeviceIntPtr dev,
 		if (enabled != 0 && enabled != 1)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 	} else {
 		driver_data->options.horiz_scrolling_enabled = enabled;
+	}
+
+	return Success;
+}
+
+static inline int
+LibinputSetPropertyScrollPixelDistance(DeviceIntPtr dev,
+				       Atom atom,
+				       XIPropertyValuePtr val,
+				       BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	uint32_t dist;
+
+	if (val->format != 32 || val->type != XA_CARDINAL || val->size != 1)
+		return BadMatch;
+
+	dist = *(BOOL*)val->data;
+	if (checkonly) {
+		if (dist < TOUCHPAD_SCROLL_DIST_MIN ||
+		    dist > TOUCHPAD_SCROLL_DIST_MAX)
+			return BadValue;
+
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+	} else {
+		driver_data->options.scroll_pixel_distance = dist;
 	}
 
 	return Success;
@@ -4400,7 +4478,7 @@ LibinputSetPropertyRotationAngle(DeviceIntPtr dev,
 		if (*angle < 0.0 || *angle >= 360.0)
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		if (libinput_device_config_rotation_is_available(device) == 0)
@@ -4444,7 +4522,7 @@ LibinputSetPropertyPressureCurve(DeviceIntPtr dev,
 				return BadValue;
 		}
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 
 		if (!cubic_bezier(controls, test_bezier, ARRAY_SIZE(test_bezier)))
@@ -4484,7 +4562,7 @@ LibinputSetPropertyAreaRatio(DeviceIntPtr dev,
 		    (area.x == 0 && area.y != 0))
 			return BadValue;
 
-		if (!xf86libinput_check_device (dev, atom))
+		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 	} else {
 		struct xf86libinput *other;
@@ -4557,6 +4635,8 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		rc = LibinputSetPropertyDragLockButtons(dev, atom, val, checkonly);
 	else if (atom == prop_horiz_scroll)
 		rc = LibinputSetPropertyHorizScroll(dev, atom, val, checkonly);
+	else if (atom == prop_scroll_pixel_distance)
+		rc = LibinputSetPropertyScrollPixelDistance(dev, atom, val, checkonly);
 	else if (atom == prop_mode_groups) {
 		InputInfoPtr pInfo = dev->public.devicePrivate;
 		struct xf86libinput *driver_data = pInfo->private;
@@ -4588,6 +4668,7 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		 atom == prop_scroll_methods_available ||
 		 atom == prop_scroll_button_default ||
 		 atom == prop_scroll_buttonlock_default ||
+		 atom == prop_scroll_pixel_distance_default ||
 		 atom == prop_click_method_default ||
 		 atom == prop_click_methods_available ||
 		 atom == prop_middle_emulation_default ||
@@ -5115,6 +5196,32 @@ LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
 }
 
 static void
+LibinputInitScrollPixelDistanceProperty(DeviceIntPtr dev,
+					struct xf86libinput *driver_data,
+					struct libinput_device *device)
+{
+	CARD32 dist = driver_data->options.scroll_pixel_distance;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
+	if (!xf86libinput_want_scroll_distance_option(device))
+		return;
+
+	prop_scroll_pixel_distance = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_SCROLL_PIXEL_DISTANCE,
+							  XA_CARDINAL, 32,
+							  1, &dist);
+	if (!prop_scroll_pixel_distance)
+		return;
+
+	prop_scroll_pixel_distance_default = LibinputMakeProperty(dev,
+								  LIBINPUT_PROP_SCROLL_PIXEL_DISTANCE_DEFAULT,
+								  XA_CARDINAL, 32,
+								  1, &dist);
+}
+
+static void
 LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 				 struct xf86libinput *driver_data,
 				 struct libinput_device *device)
@@ -5555,6 +5662,7 @@ LibinputInitProperty(DeviceIntPtr dev)
 
 	LibinputInitDragLockProperty(dev, driver_data);
 	LibinputInitHorizScrollProperty(dev, driver_data);
+	LibinputInitScrollPixelDistanceProperty(dev, driver_data, device);
 	LibinputInitPressureCurveProperty(dev, driver_data);
 	LibinputInitTabletAreaRatioProperty(dev, driver_data);
 }
