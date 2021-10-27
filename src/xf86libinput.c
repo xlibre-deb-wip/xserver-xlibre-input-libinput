@@ -78,6 +78,13 @@
 #define CAP_TABLET	0x8
 #define CAP_TABLET_TOOL	0x10
 #define CAP_TABLET_PAD	0x20
+#define CAP_GESTURE	0x40
+
+#if HAVE_INPUTPROTO24
+#if ABI_XINPUT_VERSION >= SET_ABI_VERSION(24, 4)
+#define HAVE_GESTURES
+#endif
+#endif
 
 struct xf86libinput_driver {
 	struct libinput *libinput;
@@ -1089,8 +1096,17 @@ xf86libinput_init_touch(InputInfoPtr pInfo)
 	if (ntouches == 0) /* unknown -  mtdev */
 		ntouches = TOUCH_MAX_SLOTS;
 	InitTouchClassDeviceStruct(dev, ntouches, XIDirectTouch, 2);
-
 }
+
+#ifdef HAVE_GESTURES
+static void
+xf86libinput_init_gesture(InputInfoPtr pInfo)
+{
+	DeviceIntPtr dev = pInfo->dev;
+	int ntouches = TOUCH_MAX_SLOTS;
+	InitGestureClassDeviceStruct(dev, ntouches);
+}
+#endif
 
 static int
 xf86libinput_init_tablet_pen_or_eraser(InputInfoPtr pInfo,
@@ -1335,6 +1351,10 @@ xf86libinput_init(DeviceIntPtr dev)
 	}
 	if (driver_data->capabilities & CAP_TOUCH)
 		xf86libinput_init_touch(pInfo);
+#ifdef HAVE_GESTURES
+	if (driver_data->capabilities & CAP_GESTURE)
+		xf86libinput_init_gesture(pInfo);
+#endif
 	if (driver_data->capabilities & CAP_TABLET_TOOL)
 		xf86libinput_init_tablet(pInfo);
 	if (driver_data->capabilities & CAP_TABLET_PAD)
@@ -1547,9 +1567,9 @@ xf86libinput_handle_key(InputInfoPtr pInfo, struct libinput_event_keyboard *even
  * so the use-case above shouldn't matter anymore.
  */
 static inline double
-get_wheel_scroll_value(struct xf86libinput *driver_data,
-		       struct libinput_event_pointer *event,
-		       enum libinput_pointer_axis axis)
+guess_wheel_scroll_value(struct xf86libinput *driver_data,
+			 struct libinput_event_pointer *event,
+			 enum libinput_pointer_axis axis)
 {
 	struct scroll_axis *s;
 	double f;
@@ -1609,33 +1629,91 @@ out:
 	return s->dist/s->fraction * discrete;
 }
 
+#if HAVE_LIBINPUT_AXIS_VALUE_V120
+static inline double
+get_wheel_120_value(struct xf86libinput *driver_data,
+		    struct libinput_event_pointer *event,
+		    enum libinput_pointer_axis axis)
+{
+	struct scroll_axis *s;
+	double angle;
+
+	switch (axis) {
+	case LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL:
+		s = &driver_data->scroll.h;
+		break;
+	case LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL:
+		s = &driver_data->scroll.v;
+		break;
+	default:
+		return 0.0;
+	}
+
+	angle = libinput_event_pointer_get_scroll_value_v120(event, axis);
+	return s->dist * angle/120;
+}
+#endif
+
+static inline double
+get_wheel_scroll_value(struct xf86libinput *driver_data,
+		       struct libinput_event_pointer *event,
+		       enum libinput_pointer_axis axis)
+{
+#if HAVE_LIBINPUT_AXIS_VALUE_V120
+	return get_wheel_120_value(driver_data, event, axis);
+#else
+	return guess_wheel_scroll_value(driver_data, event, axis);
+#endif
+}
+
+static inline double
+get_finger_or_continuous_scroll_value(struct libinput_event_pointer *event,
+				      enum libinput_pointer_axis axis)
+{
+#if HAVE_LIBINPUT_AXIS_VALUE_V120
+	return libinput_event_pointer_get_scroll_value(event, axis);
+#else
+	return libinput_event_pointer_get_axis_value(event, axis);
+#endif
+}
+
 static inline bool
 calculate_axis_value(struct xf86libinput *driver_data,
 		     enum libinput_pointer_axis axis,
 		     struct libinput_event_pointer *event,
+		     enum libinput_pointer_axis_source source,
 		     double *value_out)
 {
-	enum libinput_pointer_axis_source source;
 	double value;
 
 	if (!libinput_event_pointer_has_axis(event, axis))
 		return false;
 
-	source = libinput_event_pointer_get_axis_source(event);
+	/* Event may be LIBINPUT_POINTER_AXIS or
+	 * LIBINPUT_EVENT_POINTER_SCROLL_{WHEEL|FINGER|CONTINUOUS}, depending
+	 * on the libinput version.
+	 *
+	 * libinput guarantees the axis source is set for the second set of
+	 * events too but we can switch to the event type once we ditch
+	 * libinput < 1.19 support.
+	 */
 	if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
 		value = get_wheel_scroll_value(driver_data, event, axis);
 	} else {
 		double dist = driver_data->options.scroll_pixel_distance;
 		assert(dist != 0.0);
 
-		value = libinput_event_pointer_get_axis_value(event, axis);
+		value = get_finger_or_continuous_scroll_value(event, axis);
 		/* We need to scale this value into our scroll increment range
 		 * because that one is constant for the lifetime of the
 		 * device. The user may change the ScrollPixelDistance
 		 * though, so where we have a dist of 10 but an increment of
 		 * 15, we need to scale from 0..10 into 0..15.
+		 *
+		 * We now switched to vdist of 120, so make this
+		 * proportionate - 120/15 is 8.
 		 */
-		value = value/dist * SCROLL_INCREMENT;
+		value = value/dist * SCROLL_INCREMENT * 8;
 	}
 
 	*value_out = value;
@@ -1644,32 +1722,26 @@ calculate_axis_value(struct xf86libinput *driver_data,
 }
 
 static void
-xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *event)
+xf86libinput_handle_axis(InputInfoPtr pInfo,
+			 struct libinput_event *e,
+			 enum libinput_pointer_axis_source source)
 {
+	struct libinput_event_pointer *event;
 	DeviceIntPtr dev = pInfo->dev;
 	struct xf86libinput *driver_data = pInfo->private;
 	ValuatorMask *mask = driver_data->valuators;
 	double value;
-	enum libinput_pointer_axis_source source;
 
 	if ((driver_data->capabilities & CAP_POINTER) == 0)
 		return;
 
 	valuator_mask_zero(mask);
 
-	source = libinput_event_pointer_get_axis_source(event);
-	switch(source) {
-		case LIBINPUT_POINTER_AXIS_SOURCE_FINGER:
-		case LIBINPUT_POINTER_AXIS_SOURCE_WHEEL:
-		case LIBINPUT_POINTER_AXIS_SOURCE_CONTINUOUS:
-			break;
-		default:
-			return;
-	}
-
+	event = libinput_event_get_pointer_event(e);
 	if (calculate_axis_value(driver_data,
 				 LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL,
 				 event,
+				 source,
 				 &value))
 		valuator_mask_set_double(mask, 3, value);
 
@@ -1679,8 +1751,14 @@ xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *even
 	if (calculate_axis_value(driver_data,
 				 LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL,
 				 event,
+				 source,
 				 &value))
 		valuator_mask_set_double(mask, 2, value);
+
+	if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL &&
+	    !valuator_mask_isset(mask, 2) &&
+	    !valuator_mask_isset(mask, 3))
+		return;
 
 out:
 	xf86PostMotionEventM(dev, Relative, mask);
@@ -1736,6 +1814,86 @@ xf86libinput_handle_touch(InputInfoPtr pInfo,
 
 	xf86PostTouchEvent(dev, touchids[slot], type, 0, m);
 }
+
+#ifdef HAVE_GESTURES
+static void
+xf86libinput_handle_gesture_swipe(InputInfoPtr pInfo,
+				  struct libinput_event_gesture *event,
+				  enum libinput_event_type event_type)
+{
+	DeviceIntPtr dev = pInfo->dev;
+	struct xf86libinput *driver_data = pInfo->private;
+	int type;
+	uint32_t flags = 0;
+
+	if ((driver_data->capabilities & CAP_GESTURE) == 0)
+		return;
+
+	switch (event_type) {
+		case LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN:
+			type = XI_GestureSwipeBegin;
+			break;
+		case LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE:
+			type = XI_GestureSwipeUpdate;
+			break;
+		case LIBINPUT_EVENT_GESTURE_SWIPE_END:
+			type = XI_GestureSwipeEnd;
+			if (libinput_event_gesture_get_cancelled(event))
+			    flags |= XIGestureSwipeEventCancelled;
+			break;
+		default:
+			return;
+	}
+
+	xf86PostGestureSwipeEvent(dev, type,
+				  libinput_event_gesture_get_finger_count(event),
+				  flags,
+				  libinput_event_gesture_get_dx(event),
+				  libinput_event_gesture_get_dy(event),
+				  libinput_event_gesture_get_dx_unaccelerated(event),
+				  libinput_event_gesture_get_dy_unaccelerated(event));
+}
+
+static void
+xf86libinput_handle_gesture_pinch(InputInfoPtr pInfo,
+				  struct libinput_event_gesture *event,
+				  enum libinput_event_type event_type)
+{
+	DeviceIntPtr dev = pInfo->dev;
+	struct xf86libinput *driver_data = pInfo->private;
+	int type;
+	uint32_t flags = 0;
+
+	if ((driver_data->capabilities & CAP_GESTURE) == 0)
+		return;
+
+	switch (event_type) {
+		case LIBINPUT_EVENT_GESTURE_PINCH_BEGIN:
+			type = XI_GesturePinchBegin;
+			break;
+		case LIBINPUT_EVENT_GESTURE_PINCH_UPDATE:
+			type = XI_GesturePinchUpdate;
+			break;
+		case LIBINPUT_EVENT_GESTURE_PINCH_END:
+			type = XI_GesturePinchEnd;
+			if (libinput_event_gesture_get_cancelled(event))
+			    flags |= XIGesturePinchEventCancelled;
+			break;
+		default:
+			return;
+	}
+
+	xf86PostGesturePinchEvent(dev, type,
+				  libinput_event_gesture_get_finger_count(event),
+				  flags,
+				  libinput_event_gesture_get_dx(event),
+				  libinput_event_gesture_get_dy(event),
+				  libinput_event_gesture_get_dx_unaccelerated(event),
+				  libinput_event_gesture_get_dy_unaccelerated(event),
+				  libinput_event_gesture_get_scale(event),
+				  libinput_event_gesture_get_angle_delta(event));
+}
+#endif
 
 static InputInfoPtr
 xf86libinput_pick_device(struct xf86libinput_device *shared_device,
@@ -2279,9 +2437,30 @@ xf86libinput_handle_event(struct libinput_event *event)
 						libinput_event_get_keyboard_event(event));
 			break;
 		case LIBINPUT_EVENT_POINTER_AXIS:
+#if !HAVE_LIBINPUT_AXIS_VALUE_V120
+			/* ignore POINTER_AXIS where we have libinput 1.19 and higher */
 			xf86libinput_handle_axis(pInfo,
-						 libinput_event_get_pointer_event(event));
+						 event,
+						 libinput_event_pointer_get_axis_source(event));
+#endif
 			break;
+#if HAVE_LIBINPUT_AXIS_VALUE_V120
+		case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
+			xf86libinput_handle_axis(pInfo,
+						 event,
+						 LIBINPUT_POINTER_AXIS_SOURCE_WHEEL);
+			break;
+		case LIBINPUT_EVENT_POINTER_SCROLL_FINGER:
+			xf86libinput_handle_axis(pInfo,
+						 event,
+						 LIBINPUT_POINTER_AXIS_SOURCE_FINGER);
+			break;
+		case LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS:
+			xf86libinput_handle_axis(pInfo,
+						 event,
+						 LIBINPUT_POINTER_AXIS_SOURCE_CONTINUOUS);
+			break;
+#endif
 		case LIBINPUT_EVENT_TOUCH_FRAME:
 			break;
 		case LIBINPUT_EVENT_TOUCH_UP:
@@ -2295,9 +2474,20 @@ xf86libinput_handle_event(struct libinput_event *event)
 		case LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN:
 		case LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE:
 		case LIBINPUT_EVENT_GESTURE_SWIPE_END:
+#ifdef HAVE_GESTURES
+			xf86libinput_handle_gesture_swipe(pInfo,
+							  libinput_event_get_gesture_event(event),
+							  type);
+#endif
+			break;
 		case LIBINPUT_EVENT_GESTURE_PINCH_BEGIN:
 		case LIBINPUT_EVENT_GESTURE_PINCH_UPDATE:
 		case LIBINPUT_EVENT_GESTURE_PINCH_END:
+#ifdef HAVE_GESTURES
+			xf86libinput_handle_gesture_pinch(pInfo,
+							  libinput_event_get_gesture_event(event),
+							  type);
+#endif
 			break;
 		case LIBINPUT_EVENT_TABLET_TOOL_AXIS:
 			event_handling = xf86libinput_handle_tablet_axis(pInfo,
@@ -3295,6 +3485,10 @@ xf86libinput_create_subdevice(InputInfoPtr pInfo,
 		options = xf86ReplaceBoolOption(options, "_libinput/cap-pointer", 1);
 	if (capabilities & CAP_TOUCH)
 		options = xf86ReplaceBoolOption(options, "_libinput/cap-touch", 1);
+#ifdef HAVE_GESTURES
+	if (capabilities & CAP_GESTURE)
+		options = xf86ReplaceBoolOption(options, "_libinput/cap-gesture", 1);
+#endif
 	if (capabilities & CAP_TABLET_TOOL)
 		options = xf86ReplaceBoolOption(options, "_libinput/cap-tablet-tool", 1);
 	if (capabilities & CAP_TABLET_PAD)
@@ -3333,6 +3527,10 @@ caps_from_options(InputInfoPtr pInfo)
 		capabilities |= CAP_POINTER;
 	if (xf86CheckBoolOption(pInfo->options, "_libinput/cap-touch", 0))
 		capabilities |= CAP_TOUCH;
+#ifdef HAVE_GESTURES
+	if (xf86CheckBoolOption(pInfo->options, "_libinput/cap-gesture", 0))
+		capabilities |= CAP_GESTURE;
+#endif
 	if (xf86CheckBoolOption(pInfo->options, "_libinput/cap-tablet-tool", 0))
 		capabilities |= CAP_TABLET_TOOL;
 
@@ -3468,8 +3666,8 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	 * affect touchpad scroll speed. For wheels it doesn't matter as
 	 * we're using the discrete value only.
 	 */
-	driver_data->scroll.v.dist = SCROLL_INCREMENT;
-	driver_data->scroll.h.dist = SCROLL_INCREMENT;
+	driver_data->scroll.v.dist = 120;
+	driver_data->scroll.h.dist = 120;
 
 	if (!is_subdevice) {
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER))
@@ -3478,6 +3676,10 @@ xf86libinput_pre_init(InputDriverPtr drv,
 			driver_data->capabilities |= CAP_KEYBOARD;
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TOUCH))
 			driver_data->capabilities |= CAP_TOUCH;
+#ifdef HAVE_GESTURES
+		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_GESTURE))
+			driver_data->capabilities |= CAP_GESTURE;
+#endif
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TABLET_TOOL))
 			driver_data->capabilities |= CAP_TABLET;
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TABLET_PAD))
@@ -3500,7 +3702,7 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	 * this device, create a separate device instead */
 	if (!is_subdevice &&
 	    driver_data->capabilities & CAP_KEYBOARD &&
-	    driver_data->capabilities & (CAP_POINTER|CAP_TOUCH)) {
+	    driver_data->capabilities & (CAP_POINTER|CAP_TOUCH|CAP_GESTURE)) {
 		driver_data->capabilities &= ~CAP_KEYBOARD;
 		xf86libinput_create_subdevice(pInfo,
 					      CAP_KEYBOARD,

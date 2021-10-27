@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [1.1.0],
+        [1.2.0],
         [https://gitlab.freedesktop.org/xorg/driver/xf86-input-libinput/issues],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -47,6 +47,9 @@ XORG_DEFAULT_OPTIONS
 PKG_CHECK_MODULES(XORG, [xorg-server >= 1.19] xproto [inputproto >= 2.2])
 PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.11.0])
 
+PKG_CHECK_MODULES(INPUTPROTO24, [inputproto >= 2.3.99.1],
+		  [AC_DEFINE(HAVE_INPUTPROTO24, [1], [inputproto 2.4 is available])])
+
 OLD_LIBS=$LIBS
 OLD_CFLAGS=$CFLAGS
 LIBS="$LIBS $LIBINPUT_LIBS"
@@ -62,6 +65,18 @@ AC_LINK_IFELSE(
                 [libinput_have_scroll_button_lock=yes]],
                [AC_MSG_RESULT([no])
                 [libinput_have_scroll_button_lock=no]])
+
+AC_MSG_CHECKING([if libinput_event_pointer_get_scroll_value_v120 is available])
+AC_LINK_IFELSE(
+               [AC_LANG_PROGRAM([[#include <libinput.h>]],
+                                [[libinput_event_pointer_get_scroll_value_v120(NULL, 0)]])],
+               [AC_MSG_RESULT([yes])
+                AC_DEFINE(HAVE_LIBINPUT_AXIS_VALUE_V120, [1],
+                          [libinput_event_pointer_get_scroll_value_v120() is available])
+                [libinput_have_axis_value_v120=yes]],
+               [AC_MSG_RESULT([no])
+                [libinput_have_axis_value_v120=no]])
+
 LIBS=$OLD_LIBS
 CFLAGS=$OLD_CFLAGS
 
