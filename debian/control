@@ -9,7 +9,7 @@ Build-Depends:
  libudev-dev,
  pkg-config,
  quilt,
- x11proto-dev,
+ x11proto-dev (>= 2021.5),
  xserver-xorg-dev (>= 2:1.15.99),
  xutils-dev,
 Standards-Version: 4.5.0
