@@ -12,7 +12,7 @@ Build-Depends:
  x11proto-dev (>= 2021.5),
  xserver-xorg-dev (>= 2:1.15.99),
  xutils-dev,
-Standards-Version: 4.5.0
+Standards-Version: 4.6.0
 Homepage: https://www.x.org
 Vcs-Git: https://salsa.debian.org/xorg-team/driver/xserver-xorg-input-libinput.git
 Vcs-Browser: https://salsa.debian.org/xorg-team/driver/xserver-xorg-input-libinput
