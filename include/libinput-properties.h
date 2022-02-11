@@ -63,7 +63,7 @@
 /* Pointer accel speed: FLOAT, 1 value, 32 bit, read-only*/
 #define LIBINPUT_PROP_ACCEL_DEFAULT "libinput Accel Speed Default"
 
-/* Pointer accel profile: BOOL, 2 values in oder adaptive, flat,
+/* Pointer accel profile: BOOL, 2 values in order adaptive, flat,
  * only one is enabled at a time at max, read-only */
 #define LIBINPUT_PROP_ACCEL_PROFILES_AVAILABLE "libinput Accel Profiles Available"
 
@@ -206,5 +206,9 @@
 
 /* Tablet tool area ratio: CARD32, 2 values, w and h */
 #define LIBINPUT_PROP_TABLET_TOOL_AREA_RATIO "libinput Tablet Tool Area Ratio"
+
+/* High-resolution wheel scroll events enabled: BOOL, 1 value (0 or 1).
+ * If disabled, high-resolution wheel scroll events are discarded */
+#define LIBINPUT_PROP_HIRES_WHEEL_SCROLL_ENABLED "libinput High Resolution Wheel Scroll Enabled"
 
 #endif /* _LIBINPUT_PROPERTIES_H_ */
