@@ -35,6 +35,7 @@ Description: X.Org X server -- libinput input driver
 Package: xserver-xorg-input-libinput-dev
 Section: libdevel
 Architecture: all
+Multi-Arch: foreign
 Depends:
  ${shlibs:Depends},
  ${misc:Depends}
