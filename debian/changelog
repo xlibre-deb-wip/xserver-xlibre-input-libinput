@@ -3,6 +3,7 @@ xserver-xorg-input-libinput (1.2.1-1) UNRELEASED; urgency=medium
   * New upstream release.
   * control, rules: Bump debhelper-compat to 13.
   * control: Bump policy to 4.6.0.
+  * Move xorg-libinput.pc to /usr/share/pkgconfig.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 11 Feb 2022 21:34:31 +0200
 

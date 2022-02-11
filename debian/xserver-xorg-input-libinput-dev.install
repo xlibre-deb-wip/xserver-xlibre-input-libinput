@@ -1,2 +1,2 @@
 usr/include/xorg/libinput-properties.h
-usr/lib/pkgconfig/*
+usr/share/pkgconfig/*
