@@ -53,6 +53,10 @@ if cc.has_function('libinput_event_pointer_get_scroll_value_v120',
 	           dependencies: dep_libinput)
 	config_h.set('HAVE_LIBINPUT_AXIS_VALUE_V120', 1)
 endif
+if cc.has_function('libinput_config_accel_create',
+		   dependencies: dep_libinput)
+	config_h.set('HAVE_LIBINPUT_CUSTOM_ACCEL', 1)
+endif
 
 dir_headers = get_option('sdkdir')
 if dir_headers == ''
@@ -84,7 +88,7 @@ dep_drivers = [
   dep_libdraglock,
 ]
 
-driver_src = ['src/xf86libinput.c']
+driver_src = ['src/xf86libinput.c', 'src/util-strings.c']
 driver_lib = shared_module(
 	'libinput_drv',
 	driver_src,

@@ -78,6 +78,17 @@ AC_LINK_IFELSE(
                [AC_MSG_RESULT([no])
                 [libinput_have_axis_value_v120=no]])
 
+AC_MSG_CHECKING([if libinput_config_accel_create is available])
+AC_LINK_IFELSE(
+               [AC_LANG_PROGRAM([[#include <libinput.h>]],
+                                [[libinput_config_accel_create(0)]])],
+               [AC_MSG_RESULT([yes])
+                AC_DEFINE(HAVE_LIBINPUT_CUSTOM_ACCEL, [1],
+                          [libinput_config_accel_create() is available])
+                [libinput_have_custom_accel=yes]],
+               [AC_MSG_RESULT([no])
+                [libinput_have_custom_accel=no]])
+
 LIBS=$OLD_LIBS
 CFLAGS=$OLD_CFLAGS
 

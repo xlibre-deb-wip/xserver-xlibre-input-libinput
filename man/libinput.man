@@ -45,13 +45,28 @@ are supported:
 Sets the pointer acceleration profile to the given profile. Permitted values
 are
 .BI adaptive,
-.BI flat.
+.BI flat,
+.BI custom.
 Not all devices support this option or all profiles. If a profile is
 unsupported, the default profile for this device is used. For a description
 on the profiles and their behavior, see the libinput documentation.
 .TP 7
 .BI "Option \*qAccelSpeed\*q \*q" float \*q
-Sets the pointer acceleration speed within the range [-1, 1]
+Sets the pointer acceleration speed within the range [-1, 1].
+This only applies to the flat or adaptive profile.
+.BI "Option \*AccelPointsFallback\*q \*q" string \*q
+Sets the points of the Fallback acceleration function, (see the libinput documentation).
+The string must be a space-separated list of floating point non-negative numbers, e.g.
+"0.0 1.0 2.4 2.5".
+This only applies to the custom profile.
+.BI "Option \*AccelStepFallback\*q \*q" float \*q
+Sets the step between the points of the Fallback acceleration function, (see the libinput documentation).
+When a step of 0.0 is provided, libinput's default Fallback acceleration function is used.
+This only applies to the custom profile.
+.BI "Option \*AccelPointsMotion\*q \*q" string \*q
+Equivalent to AccelPointsFallback but applies to the Motion acceleration function.
+.BI "Option \*AccelStepMotion\*q \*q" float \*q
+Equivalent to AccelStepFallback but applies to the Motion acceleration function.
 .TP 7
 .BI "Option \*qButtonMapping\*q \*q" string \*q
 Sets the logical button mapping for this device, see
