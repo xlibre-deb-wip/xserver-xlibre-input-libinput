@@ -1591,8 +1591,8 @@ xf86libinput_handle_absmotion(InputInfoPtr pInfo, struct libinput_event_pointer 
 	if ((driver_data->capabilities & CAP_POINTER) == 0)
 		return;
 
-	x = libinput_event_pointer_get_absolute_x_transformed(event, TOUCH_AXIS_MAX);
-	y = libinput_event_pointer_get_absolute_y_transformed(event, TOUCH_AXIS_MAX);
+	x = libinput_event_pointer_get_absolute_x_transformed(event, TOUCH_AXIS_MAX + 1);
+	y = libinput_event_pointer_get_absolute_y_transformed(event, TOUCH_AXIS_MAX + 1);
 
 	valuator_mask_zero(mask);
 	valuator_mask_set_double(mask, 0, x);
