@@ -67,6 +67,10 @@ This only applies to the custom profile.
 Equivalent to AccelPointsFallback but applies to the Motion acceleration function.
 .BI "Option \*AccelStepMotion\*q \*q" float \*q
 Equivalent to AccelStepFallback but applies to the Motion acceleration function.
+.BI "Option \*AccelPointsScroll\*q \*q" string \*q
+Equivalent to AccelPointsFallback but applies to the Scroll acceleration function.
+.BI "Option \*AccelStepScroll\*q \*q" float \*q
+Equivalent to AccelStepFallback but applies to the Scroll acceleration function.
 .TP 7
 .BI "Option \*qButtonMapping\*q \*q" string \*q
 Sets the logical button mapping for this device, see

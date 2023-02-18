@@ -181,6 +181,7 @@ struct xf86libinput {
 #if HAVE_LIBINPUT_CUSTOM_ACCEL
 		struct accel_points accel_points_fallback;
 		struct accel_points accel_points_motion;
+		struct accel_points accel_points_scroll;
 #endif
 		unsigned char btnmap[MAX_BUTTONS + 1];
 
@@ -568,6 +569,17 @@ LibinputApplyConfigAccelCustom(struct xf86libinput *driver_data,
 							  driver_data->options.accel_points_motion.step,
 							  driver_data->options.accel_points_motion.npoints,
 							  driver_data->options.accel_points_motion.points);
+		if (status != LIBINPUT_CONFIG_STATUS_SUCCESS)
+			goto out;
+	}
+
+	if (driver_data->options.accel_points_scroll.step > 0 &&
+	    driver_data->options.accel_points_scroll.npoints >= 2) {
+		status = libinput_config_accel_set_points(accel,
+							  LIBINPUT_ACCEL_TYPE_SCROLL,
+							  driver_data->options.accel_points_scroll.step,
+							  driver_data->options.accel_points_scroll.npoints,
+							  driver_data->options.accel_points_scroll.points);
 		if (status != LIBINPUT_CONFIG_STATUS_SUCCESS)
 			goto out;
 	}
@@ -2987,6 +2999,13 @@ xf86libinput_parse_accel_points_motion_option(InputInfoPtr pInfo, struct libinpu
 	return xf86libinput_parse_accel_points_option(pInfo, device, "AccelPointsMotion");
 }
 
+static inline struct accel_points
+xf86libinput_parse_accel_points_scroll_option(InputInfoPtr pInfo, struct libinput_device *device)
+{
+	return xf86libinput_parse_accel_points_option(pInfo, device, "AccelPointsScroll");
+}
+
+
 static inline double
 xf86libinput_parse_accel_step_option(InputInfoPtr pInfo, struct libinput_device *device, const char *name)
 {
@@ -3020,6 +3039,12 @@ static inline double
 xf86libinput_parse_accel_step_motion_option(InputInfoPtr pInfo, struct libinput_device *device)
 {
 	return xf86libinput_parse_accel_step_option(pInfo, device, "AccelStepMotion");
+}
+
+static inline double
+xf86libinput_parse_accel_step_scroll_option(InputInfoPtr pInfo, struct libinput_device *device)
+{
+	return xf86libinput_parse_accel_step_option(pInfo, device, "AccelStepScroll");
 }
 #endif
 
@@ -3559,9 +3584,11 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 	options->accel_profile = xf86libinput_parse_accel_profile_option(pInfo, device);
 #if HAVE_LIBINPUT_CUSTOM_ACCEL
 	options->accel_points_fallback = xf86libinput_parse_accel_points_fallback_option(pInfo, device);
-	options->accel_points_motion = xf86libinput_parse_accel_points_motion_option(pInfo, device);
 	options->accel_points_fallback.step = xf86libinput_parse_accel_step_fallback_option(pInfo, device);
+	options->accel_points_motion = xf86libinput_parse_accel_points_motion_option(pInfo, device);
 	options->accel_points_motion.step = xf86libinput_parse_accel_step_motion_option(pInfo, device);
+	options->accel_points_scroll = xf86libinput_parse_accel_points_scroll_option(pInfo, device);
+	options->accel_points_scroll.step = xf86libinput_parse_accel_step_scroll_option(pInfo, device);
 #endif
 	options->natural_scrolling = xf86libinput_parse_natscroll_option(pInfo, device);
 	options->sendevents = xf86libinput_parse_sendevents_option(pInfo, device);
@@ -4024,10 +4051,12 @@ static Atom prop_accel;
 static Atom prop_accel_default;
 static Atom prop_accel_profile_enabled;
 #if HAVE_LIBINPUT_CUSTOM_ACCEL
-static Atom prop_accel_points_motion;
 static Atom prop_accel_points_fallback;
-static Atom prop_accel_step_motion;
 static Atom prop_accel_step_fallback;
+static Atom prop_accel_points_motion;
+static Atom prop_accel_step_motion;
+static Atom prop_accel_points_scroll;
+static Atom prop_accel_step_scroll;
 #endif
 static Atom prop_accel_profile_default;
 static Atom prop_accel_profiles_available;
@@ -4469,6 +4498,8 @@ LibinputSetPropertyAccelPoints(DeviceIntPtr dev,
 			accel_points = &driver_data->options.accel_points_fallback;
 		else if (atom == prop_accel_points_motion)
 			accel_points = &driver_data->options.accel_points_motion;
+		else if (atom == prop_accel_points_scroll)
+			accel_points = &driver_data->options.accel_points_scroll;
 
 		for (size_t idx = 0; idx < val->size; idx++)
 			accel_points->points[idx] = data[idx];
@@ -4511,6 +4542,8 @@ LibinputSetPropertyAccelStep(DeviceIntPtr dev,
 			driver_data->options.accel_points_fallback.step = *data;
 		else if (atom == prop_accel_step_motion)
 			driver_data->options.accel_points_motion.step = *data;
+		else if (atom == prop_accel_step_scroll)
+			driver_data->options.accel_points_scroll.step = *data;
 	}
 
 	return Success;
@@ -5166,9 +5199,13 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 	else if (atom == prop_accel_profile_enabled)
 		rc = LibinputSetPropertyAccelProfile(dev, atom, val, checkonly);
 #if HAVE_LIBINPUT_CUSTOM_ACCEL
-	else if (atom == prop_accel_points_fallback || atom == prop_accel_points_motion)
+	else if (atom == prop_accel_points_fallback ||
+	         atom == prop_accel_points_motion ||
+		 atom == prop_accel_points_scroll)
 		rc = LibinputSetPropertyAccelPoints(dev, atom, val, checkonly);
-	else if (atom == prop_accel_step_fallback || atom == prop_accel_step_motion)
+	else if (atom == prop_accel_step_fallback ||
+	         atom == prop_accel_step_motion ||
+		 atom == prop_accel_step_scroll)
 		rc = LibinputSetPropertyAccelStep(dev, atom, val, checkonly);
 #endif
 	else if (atom == prop_natural_scroll)
@@ -5456,14 +5493,18 @@ LibinputInitAccelProperty(DeviceIntPtr dev,
 #if HAVE_LIBINPUT_CUSTOM_ACCEL
 	float custom_points_fallback[CUSTOM_ACCEL_NPOINTS_MAX] = {0};
 	float custom_points_motion[CUSTOM_ACCEL_NPOINTS_MAX] = {0};
+	float custom_points_scroll[CUSTOM_ACCEL_NPOINTS_MAX] = {0};
 	size_t custom_npoints_fallback = driver_data->options.accel_points_fallback.npoints;
 	size_t custom_npoints_motion = driver_data->options.accel_points_motion.npoints;
+	size_t custom_npoints_scroll = driver_data->options.accel_points_scroll.npoints;
 	float custom_step_fallback = driver_data->options.accel_points_fallback.step;
 	float custom_step_motion = driver_data->options.accel_points_motion.step;
+	float custom_step_scroll = driver_data->options.accel_points_scroll.step;
 
 	for (size_t idx = 0; idx < CUSTOM_ACCEL_NPOINTS_MAX; idx++) {
 		custom_points_fallback[idx] = driver_data->options.accel_points_fallback.points[idx];
 		custom_points_motion[idx] = driver_data->options.accel_points_motion.points[idx];
+		custom_points_scroll[idx] = driver_data->options.accel_points_scroll.points[idx];
 	}
 #endif
 
@@ -5568,19 +5609,28 @@ LibinputInitAccelProperty(DeviceIntPtr dev,
 							  prop_float, 32,
 							  custom_npoints_fallback,
 							  custom_points_fallback);
+	prop_accel_step_fallback = LibinputMakeProperty(dev,
+							LIBINPUT_PROP_ACCEL_CUSTOM_STEP_FALLBACK,
+							prop_float, 32, 1,
+							&custom_step_fallback);
 	prop_accel_points_motion = LibinputMakeProperty(dev,
 							LIBINPUT_PROP_ACCEL_CUSTOM_POINTS_MOTION,
 							prop_float, 32,
 							custom_npoints_motion,
 							custom_points_motion);
-	prop_accel_step_fallback = LibinputMakeProperty(dev,
-							LIBINPUT_PROP_ACCEL_CUSTOM_STEP_FALLBACK,
-							prop_float, 32, 1,
-							&custom_step_fallback);
 	prop_accel_step_motion = LibinputMakeProperty(dev,
 						      LIBINPUT_PROP_ACCEL_CUSTOM_STEP_MOTION,
 						      prop_float, 32, 1,
 						      &custom_step_motion);
+	prop_accel_points_scroll = LibinputMakeProperty(dev,
+							LIBINPUT_PROP_ACCEL_CUSTOM_POINTS_SCROLL,
+							prop_float, 32,
+							custom_npoints_scroll,
+							custom_points_scroll);
+	prop_accel_step_scroll = LibinputMakeProperty(dev,
+						      LIBINPUT_PROP_ACCEL_CUSTOM_STEP_SCROLL,
+						      prop_float, 32, 1,
+						      &custom_step_scroll);
 #endif
 }
 

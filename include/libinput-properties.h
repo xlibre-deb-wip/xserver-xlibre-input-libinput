@@ -87,6 +87,12 @@
 /* Steps for the custom accel profile: FLOAT, 1 value */
 #define LIBINPUT_PROP_ACCEL_CUSTOM_STEP_MOTION "libinput Accel Custom Motion Step"
 
+/* Points for the custom accel profile: FLOAT, N values */
+#define LIBINPUT_PROP_ACCEL_CUSTOM_POINTS_SCROLL "libinput Accel Custom Scroll Points"
+
+/* Steps for the custom accel profile: FLOAT, 1 value */
+#define LIBINPUT_PROP_ACCEL_CUSTOM_STEP_SCROLL "libinput Accel Custom Scroll Step"
+
 /* Natural scrolling: BOOL, 1 value */
 #define LIBINPUT_PROP_NATURAL_SCROLL "libinput Natural Scrolling Enabled"
 
