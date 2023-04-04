@@ -1,5 +1,5 @@
 project('xf86-input-libinput', 'c',
-        version: '1.2.1',  # bump version in configure.ac
+        version: '1.3.0',  # bump version in configure.ac
         default_options: ['warning_level=2'],
         meson_version: '>= 0.50.0')
 
