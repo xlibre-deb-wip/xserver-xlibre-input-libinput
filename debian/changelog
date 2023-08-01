@@ -1,9 +1,13 @@
-xserver-xorg-input-libinput (1.2.1-2) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (1.3.0-1) UNRELEASED; urgency=medium
 
+  [ Debian Janitor ]
   * Remove constraints unnecessary since buster (oldstable):
     + Build-Depends: Drop versioned constraint on libinput-dev (>= 1.4.901).
     + Build-Depends: Drop versioned constraint on xserver-xorg-dev (>=
       2:1.15.99).
+
+  [ Timo Aaltonen ]
+  * New upstream release.
 
  -- Debian Janitor <janitor@jelmer.uk>  Mon, 30 Jan 2023 19:18:08 -0000
 
