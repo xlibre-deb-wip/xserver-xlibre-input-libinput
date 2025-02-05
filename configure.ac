@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [1.4.0],
+        [1.5.0],
         [https://gitlab.freedesktop.org/xorg/driver/xf86-input-libinput/issues],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -88,6 +88,28 @@ AC_LINK_IFELSE(
                 [libinput_have_custom_accel=yes]],
                [AC_MSG_RESULT([no])
                 [libinput_have_custom_accel=no]])
+
+AC_MSG_CHECKING([if libinput_tablet_tool_config_pressure_range_set is available])
+AC_LINK_IFELSE(
+               [AC_LANG_PROGRAM([[#include <libinput.h>]],
+                                [[libinput_tablet_tool_config_pressure_range_set(0)]])],
+               [AC_MSG_RESULT([yes])
+                AC_DEFINE(HAVE_LIBINPUT_PRESURE_RANGE, [1],
+                          [libinput_tablet_tool_config_pressure_range_set() is available])
+                [libinput_have_pressure_range=yes]],
+               [AC_MSG_RESULT([no])
+                [libinput_have_pressure_range=no]])
+
+AC_MSG_CHECKING([if libinput_device_config_click_set_clickfinger_button_map is available])
+AC_LINK_IFELSE(
+               [AC_LANG_PROGRAM([[#include <libinput.h>]],
+                                [[libinput_device_config_click_set_clickfinger_button_map(NULL, 0)]])],
+               [AC_MSG_RESULT([yes])
+                AC_DEFINE(HAVE_LIBINPUT_CLICKFINGER_BUTTON_MAP, [1],
+                          [libinput_device_config_click_set_clickfinger_button_map() is available])
+                [libinput_have_clickfinger_button_map=yes]],
+               [AC_MSG_RESULT([no])
+                [libinput_have_clickfinger_button_map=no]])
 
 LIBS=$OLD_LIBS
 CFLAGS=$OLD_CFLAGS

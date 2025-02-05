@@ -1,5 +1,5 @@
 project('xf86-input-libinput', 'c',
-        version: '1.4.0',  # bump version in configure.ac
+        version: '1.5.0',  # bump version in configure.ac
         default_options: ['warning_level=2'],
         meson_version: '>= 0.50.0')
 
@@ -56,6 +56,17 @@ endif
 if cc.has_function('libinput_config_accel_create',
 		   dependencies: dep_libinput)
 	config_h.set('HAVE_LIBINPUT_CUSTOM_ACCEL', 1)
+endif
+if cc.has_function('libinput_tablet_tool_config_pressure_range_set',
+		   dependencies: dep_libinput)
+	config_h.set('HAVE_LIBINPUT_PRESSURE_RANGE', 1)
+endif
+if cc.has_function('libinput_device_config_click_set_clickfinger_button_map',
+		   dependencies: dep_libinput)
+	config_h.set('HAVE_LIBINPUT_CLICKFINGER_BUTTON_MAP', 1)
+endif
+if cc.has_header_symbol('libinput.h', 'LIBINPUT_LED_COMPOSE')
+	config_h.set('HAVE_LIBINPUT_COMPOSE_AND_KANA', 1)
 endif
 
 dir_headers = get_option('sdkdir')

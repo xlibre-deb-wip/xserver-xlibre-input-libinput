@@ -51,6 +51,13 @@
 /* Tap button default order: BOOL, 2 values in order LRM, LMR, read-only */
 #define LIBINPUT_PROP_TAP_BUTTONMAP_DEFAULT "libinput Tapping Button Mapping Default"
 
+/* Clickfinger button order: BOOL, 2 values in order LRM, LMR, only one may be set
+   at any time */
+#define LIBINPUT_PROP_CLICKFINGER_BUTTONMAP "libinput Clickfinger Button Mapping Enabled"
+
+/* Clickfinger button default order: BOOL, 2 values in order LRM, LMR, read-only */
+#define LIBINPUT_PROP_CLICKFINGER_BUTTONMAP_DEFAULT "libinput Clickfinger Button Mapping Default"
+
 /* Calibration matrix: FLOAT, 9 values of a 3x3 matrix, in rows */
 #define LIBINPUT_PROP_CALIBRATION "libinput Calibration Matrix"
 
@@ -222,11 +229,35 @@
  */
 #define LIBINPUT_PROP_TABLET_TOOL_PRESSURECURVE "libinput Tablet Tool Pressurecurve"
 
+/* Tablet tool pressure range: float, 2 values, 32 bit
+ * Value range is [0.0, 1.0] for min and max physical pressure to map to the logical range
+ * Default value: 0.0 1.0
+ */
+#define LIBINPUT_PROP_TABLET_TOOL_PRESSURE_RANGE "libinput Tablet Tool Pressure Range"
+
+/* Tablet tool pressure range: float, 2 values, 32 bit, read-only */
+#define LIBINPUT_PROP_TABLET_TOOL_PRESSURE_RANGE_DEFAULT "libinput Tablet Tool Pressure Range Default"
+
 /* Tablet tool area ratio: CARD32, 2 values, w and h */
 #define LIBINPUT_PROP_TABLET_TOOL_AREA_RATIO "libinput Tablet Tool Area Ratio"
 
 /* High-resolution wheel scroll events enabled: BOOL, 1 value (0 or 1).
  * If disabled, high-resolution wheel scroll events are discarded */
 #define LIBINPUT_PROP_HIRES_WHEEL_SCROLL_ENABLED "libinput High Resolution Wheel Scroll Enabled"
+
+/* The tablet tool unique serial number: CARD32, 1 value, constant for the
+ * lifetime of the device.
+ *
+ * If this property exists and is zero, the tool does not have a unique serial
+ * number.
+ */
+#define LIBINPUT_PROP_TABLET_TOOL_SERIAL "libinput Tablet Tool Serial"
+
+/* The tablet tool hardware ID: CARD32, 1 value, constant for the lifetime of the device.
+ *
+ * This property only exists if the device has a known tool ID.
+ * See libinput_tablet_tool_get_tool_id() in the libinput documentation for details.
+ */
+#define LIBINPUT_PROP_TABLET_TOOL_ID "libinput Tablet Tool ID"
 
 #endif /* _LIBINPUT_PROPERTIES_H_ */

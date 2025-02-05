@@ -233,6 +233,7 @@ test_filter_meta_passthrough(void)
 	int i;
 
 	rc = draglock_init_from_string(&dl, "10");
+	assert(rc == 0);
 
 	for (i = 0; i < 10; i++) {
 		button = i;
@@ -259,6 +260,7 @@ test_filter_meta_click_meta_only(void)
 	int button, press;
 
 	rc = draglock_init_from_string(&dl, "10");
+	assert(rc == 0);
 
 	button = 10;
 	press = 1;
@@ -283,6 +285,7 @@ test_filter_meta(void)
 	int i;
 
 	rc = draglock_init_from_string(&dl, "10");
+	assert(rc == 0);
 
 	for (i = 1; i < 10; i++) {
 		/* meta down */
@@ -339,6 +342,7 @@ test_filter_meta_extra_click(void)
 	int i;
 
 	rc = draglock_init_from_string(&dl, "10");
+	assert(rc == 0);
 
 	for (i = 1; i < 10; i++) {
 		/* meta down */
@@ -409,6 +413,7 @@ test_filter_meta_interleaved(void)
 	int i;
 
 	rc = draglock_init_from_string(&dl, "10");
+	assert(rc == 0);
 
 	for (i = 1; i < 10; i++) {
 		/* meta down */
@@ -467,6 +472,7 @@ test_filter_pairs(void)
 	int i;
 
 	rc = draglock_init_from_string(&dl, "1 11 2 0 3 13 4 0 5 15 6 0 7 17 8 0 9 19");
+	assert(rc == 0);
 
 	for (i = 1; i < 10; i++) {
 		button = i;

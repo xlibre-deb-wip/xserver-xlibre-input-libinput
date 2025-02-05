@@ -210,6 +210,14 @@ points. The respective x/y coordinate must be in the [0.0, 1.0] range. For
 more information see section
 .B TABLET STYLUS PRESSURE CURVE.
 .TP 7
+.BI "Option \*qTabletToolPressureRange\*q \*q" "min max" \*q
+Set the pressure range for a tablet stylus to the given subset of the physical
+range. The min/max values must be in the [0.0, 1.0] range. For
+example a min of 0.3 means the tablet will send 0 pressure for anything equal
+or below 30% of the physical pressure range and a max of 0.7 means
+the tablet sends its maximum pressure value for any pressure equal or higher to
+70% of the physical pressure range.
+.TP 7
 .BI "Option \*qTabletToolAreaRatio\*q \*q" "w:h" \*q
 Sets the area ratio for a tablet tool. The area always starts at the
 origin (0/0) and expands to the largest available area with the specified
