@@ -7,7 +7,7 @@ Build-Depends:
  debhelper-compat (= 13),
  libinput-dev,
  libudev-dev,
- pkg-config,
+ pkgconf,
  quilt,
  x11proto-dev (>= 2021.5),
  xserver-xorg-dev,
