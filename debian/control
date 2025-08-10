@@ -1,8 +1,7 @@
-Source: xserver-xorg-input-libinput
+Source: xserver-xlibre-input-libinput
 Section: x11
 Priority: optional
-Maintainer: Debian X Strike Force <debian-x@lists.debian.org>
-Uploaders: Timo Aaltonen <tjaalton@debian.org>,
+Maintainer: apebl <a@pebl.cc>
 Build-Depends:
  debhelper-compat (= 13),
  libinput-dev,
@@ -10,20 +9,21 @@ Build-Depends:
  pkgconf,
  quilt,
  x11proto-dev (>= 2021.5),
- xserver-xorg-dev,
+ xserver-xlibre-dev,
  xutils-dev,
 Standards-Version: 4.6.0
-Homepage: https://www.x.org
-Vcs-Git: https://salsa.debian.org/xorg-team/driver/xserver-xorg-input-libinput.git
-Vcs-Browser: https://salsa.debian.org/xorg-team/driver/xserver-xorg-input-libinput
+Homepage: https://github.com/X11Libre
+Vcs-Git: https://github.com/xlibre-deb/xserver-xlibre-input-libinput.git
+Vcs-Browser: https://github.com/xlibre-deb/xserver-xlibre-input-libinput
 
-Package: xserver-xorg-input-libinput
+Package: xserver-xlibre-input-libinput
 Architecture: linux-any
 Depends:
  ${shlibs:Depends},
  ${misc:Depends},
  ${xinpdriver:Depends},
 Provides:
+ xserver-xorg-input-libinput,
  ${xinpdriver:Provides}
 Description: X.Org X server -- libinput input driver
  This package provides the driver for input devices using libinput library.
@@ -31,8 +31,10 @@ Description: X.Org X server -- libinput input driver
  separate -evdev and -synaptics drivers.
  .
  This package is built from the X.org xf86-input-libinput driver module.
+Conflicts:
+ xserver-xorg-input-libinput,
 
-Package: xserver-xorg-input-libinput-dev
+Package: xserver-xlibre-input-libinput-dev
 Section: libdevel
 Architecture: all
 Multi-Arch: foreign
@@ -45,9 +47,12 @@ Description: X.Org X server -- libinput input driver (development headers)
  for this package.
  .
  This package is built from the X.org xf86-input-libinput driver module.
+Provides:
+ xserver-xorg-input-libinput-dev,
+Conflicts:
+ xserver-xorg-input-libinput-dev,
 
-
-Package: xserver-xorg-input-libinput-udeb
+Package: xserver-xlibre-input-libinput-udeb
 XC-Package-Type: udeb
 Section: debian-installer
 Architecture: linux-any
@@ -57,6 +62,9 @@ Depends:
  ${xinpdriver:Depends},
  udev-udeb,
 Provides:
+ xserver-xorg-input-libinput-udeb,
  ${xinpdriver:Provides}
 Description: X.Org X server -- libinput input driver
  This is a udeb, or a microdeb, for the debian-installer.
+Conflicts:
+ xserver-xorg-input-libinput-udeb,
