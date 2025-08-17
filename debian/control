@@ -23,7 +23,7 @@ Depends:
  ${misc:Depends},
  ${xinpdriver:Depends},
 Provides:
- xserver-xorg-input-libinput,
+ xserver-xorg-input-libinput (= ${binary:Version}),
  ${xinpdriver:Provides}
 Description: XLibre X server -- libinput input driver
  This package provides the driver for input devices using libinput library.
@@ -48,7 +48,7 @@ Description: XLibre X server -- libinput input driver (development headers)
  .
  This package is built from the XLibre xf86-input-libinput driver module.
 Provides:
- xserver-xorg-input-libinput-dev,
+ xserver-xorg-input-libinput-dev (= ${binary:Version}),
 Conflicts:
  xserver-xorg-input-libinput-dev,
 
@@ -62,7 +62,7 @@ Depends:
  ${xinpdriver:Depends},
  udev-udeb,
 Provides:
- xserver-xorg-input-libinput-udeb,
+ xserver-xorg-input-libinput-udeb (= ${binary:Version}),
  ${xinpdriver:Provides}
 Description: XLibre X server -- libinput input driver
  This is a udeb, or a microdeb, for the debian-installer.
