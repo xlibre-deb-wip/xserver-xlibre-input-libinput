@@ -24,6 +24,7 @@
  */
 
 #include "config.h"
+#define _GNU_SOURCE
 
 #include <errno.h>
 #include <fcntl.h>
@@ -52,6 +53,8 @@
 #define TOUCH_MAX_SLOTS 15
 #define XORG_KEYCODE_OFFSET 8
 #define SCROLL_INCREMENT 15
+#define SCROLL_FACTOR_MIN 0.0001
+#define SCROLL_FACTOR_MAX 1000.0
 #define TOUCHPAD_SCROLL_DIST_MIN 10 /* in libinput pixels */
 #define TOUCHPAD_SCROLL_DIST_MAX 50 /* in libinput pixels */
 
@@ -175,6 +178,7 @@ struct xf86libinput {
 		CARD32 scroll_button; /* xorg button number */
 		BOOL scroll_buttonlock;
 		uint32_t scroll_pixel_distance;
+		float scroll_factor;
 		float speed;
 		float matrix[9];
 		enum libinput_config_scroll_method scroll_method;
@@ -463,7 +467,7 @@ xf86libinput_set_pressurecurve(struct xf86libinput *driver_data,
 
 static inline bool
 xf86libinput_set_pressure_range(struct xf86libinput *driver_data,
-				const struct range *range)
+				const struct range *rangeopt)
 {
 #if HAVE_LIBINPUT_PRESSURE_RANGE
 	struct libinput_tablet_tool *tool = driver_data->tablet_tool;
@@ -473,8 +477,8 @@ xf86libinput_set_pressure_range(struct xf86libinput *driver_data,
 
 	return libinput_tablet_tool_config_pressure_range_is_available(tool) &&
 	       libinput_tablet_tool_config_pressure_range_set(tool,
-							      range->min,
-							      range->max) == LIBINPUT_CONFIG_STATUS_SUCCESS;
+							      rangeopt->min,
+							      rangeopt->max) == LIBINPUT_CONFIG_STATUS_SUCCESS;
 #else
 	return FALSE;
 #endif
@@ -935,16 +939,16 @@ LibinputApplyConfigPressureRange(DeviceIntPtr dev,
 #if HAVE_LIBINPUT_PRESSURE_RANGE
 	InputInfoPtr pInfo = dev->public.devicePrivate;
 	struct libinput_tablet_tool *tool = driver_data->tablet_tool;
-	struct range *range = &driver_data->options.pressure_range;
+	struct range *rangeopt = &driver_data->options.pressure_range;
 
 	if (!subdevice_has_capabilities(dev, CAP_TABLET_TOOL))
 		return;
 
 	if (tool && libinput_tablet_tool_config_pressure_range_is_available(tool) &&
-	    libinput_tablet_tool_config_pressure_range_set(tool, range->min, range->max) != LIBINPUT_CONFIG_STATUS_SUCCESS)
+	    libinput_tablet_tool_config_pressure_range_set(tool, rangeopt->min, rangeopt->max) != LIBINPUT_CONFIG_STATUS_SUCCESS)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set PressureRange to %.2f..%.2f\n",
-			    range->min, range->max);
+			    rangeopt->min, rangeopt->max);
 #endif
 }
 
@@ -1913,6 +1917,7 @@ calculate_axis_value(struct xf86libinput *driver_data,
 		value = value/dist * SCROLL_INCREMENT * 8;
 	}
 
+	value *= driver_data->options.scroll_factor;
 	*value_out = value;
 
 	return true;
@@ -3435,6 +3440,20 @@ xf86libinput_parse_scroll_pixel_distance_option(InputInfoPtr pInfo,
 	return dist;
 }
 
+static inline double
+xf86libinput_parse_scroll_factor_option(InputInfoPtr pInfo,
+					struct libinput_device *device)
+{
+	const double scroll_factor_default = 1.0;
+	double scroll_factor = xf86SetRealOption(pInfo->options, "ScrollFactor", scroll_factor_default);
+	if (scroll_factor < SCROLL_FACTOR_MIN || scroll_factor > SCROLL_FACTOR_MAX) {
+		xf86IDrvMsg(pInfo, X_ERROR, "Invalid ScrollFactor %f, expected to be between %f and %f\n",
+			scroll_factor, SCROLL_FACTOR_MIN, SCROLL_FACTOR_MAX);
+		scroll_factor = scroll_factor_default;
+	}
+	return scroll_factor;
+}
+
 static inline unsigned int
 xf86libinput_parse_clickmethod_option(InputInfoPtr pInfo,
 				      struct libinput_device *device)
@@ -3666,7 +3685,7 @@ out:
 static void
 xf86libinput_parse_pressure_range_option(InputInfoPtr pInfo,
 					 struct xf86libinput *driver_data,
-					 struct range *range)
+					 struct range *rangeopt)
 {
 #if HAVE_LIBINPUT_PRESSURE_RANGE
 	struct libinput_tablet_tool *tool = driver_data->tablet_tool;
@@ -3674,8 +3693,8 @@ xf86libinput_parse_pressure_range_option(InputInfoPtr pInfo,
 	char *str;
 	int rc;
 
-	range->min = 0.0;
-	range->max = 1.0;
+	rangeopt->min = 0.0;
+	rangeopt->max = 1.0;
 
 	if ((driver_data->capabilities & CAP_TABLET_TOOL) == 0)
 		return;
@@ -3696,8 +3715,8 @@ xf86libinput_parse_pressure_range_option(InputInfoPtr pInfo,
 	if (min < 0.0 || max > 1.0 || min >= max)
 		goto out;
 
-	range->min = min;
-	range->max = max;
+	rangeopt->min = min;
+	rangeopt->max = max;
 out:
 	free(str);
 #endif
@@ -3774,6 +3793,7 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 	options->scroll_button = xf86libinput_parse_scrollbutton_option(pInfo, device);
 	options->scroll_buttonlock = xf86libinput_parse_scrollbuttonlock_option(pInfo, device);
 	options->scroll_pixel_distance = xf86libinput_parse_scroll_pixel_distance_option(pInfo, device);
+	options->scroll_factor = xf86libinput_parse_scroll_factor_option(pInfo, device);
 	options->click_method = xf86libinput_parse_clickmethod_option(pInfo, device);
 #if HAVE_LIBINPUT_CLICKFINGER_BUTTON_MAP
 	options->clickfinger_button_map = xf86libinput_parse_clickfinger_map_option(pInfo, device);
@@ -4257,6 +4277,8 @@ static Atom prop_scroll_buttonlock;
 static Atom prop_scroll_buttonlock_default;
 static Atom prop_scroll_pixel_distance;
 static Atom prop_scroll_pixel_distance_default;
+static Atom prop_scroll_factor;
+static Atom prop_scroll_factor_default;
 static Atom prop_click_methods_available;
 static Atom prop_click_method_enabled;
 static Atom prop_click_method_default;
@@ -5248,6 +5270,34 @@ LibinputSetPropertyScrollPixelDistance(DeviceIntPtr dev,
 }
 
 static inline int
+LibinputSetPropertyScrollFactor(DeviceIntPtr dev,
+				Atom atom,
+				XIPropertyValuePtr val,
+				BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	float *scroll_factor;
+
+	if (val->format != 32 || val->size != 1 || val->type != prop_float)
+		return BadMatch;
+
+	scroll_factor = (float*)val->data;
+
+	if (checkonly) {
+		if (*scroll_factor < SCROLL_FACTOR_MIN || *scroll_factor > SCROLL_FACTOR_MAX)
+			return BadValue;
+
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+	} else {
+		driver_data->options.scroll_factor = *scroll_factor;
+	}
+
+	return Success;
+}
+
+static inline int
 LibinputSetPropertyRotationAngle(DeviceIntPtr dev,
 				 Atom atom,
 				 XIPropertyValuePtr val,
@@ -5334,28 +5384,28 @@ LibinputSetPropertyPressureRange(DeviceIntPtr dev,
 	InputInfoPtr pInfo = dev->public.devicePrivate;
 	struct xf86libinput *driver_data = pInfo->private;
 	float *vals;
-	struct range range = { 0.0, 1.0 };
+	struct range rangeopt = { 0.0, 1.0 };
 
 	if (val->format != 32 || val->size != 2 || val->type != prop_float)
 		return BadMatch;
 
 	vals = val->data;
-	range.min = vals[0];
-	range.max = vals[1];
+	rangeopt.min = vals[0];
+	rangeopt.max = vals[1];
 
 	if (checkonly) {
-		if (range.min < 0.0 || range.max > 1.0 || range.min >= range.max)
+		if (rangeopt.min < 0.0 || rangeopt.max > 1.0 || rangeopt.min >= rangeopt.max)
 			return BadValue;
 
 		/* Disallow reducing the range to less than 20% of the range, mostly
 		 * to avoid footguns */
-		if (range.max - range.min < 0.2)
+		if (rangeopt.max - rangeopt.min < 0.2)
 			return BadValue;
 
 		if (!xf86libinput_check_device(dev, atom))
 			return BadMatch;
 	} else {
-		driver_data->options.pressure_range = range;
+		driver_data->options.pressure_range = rangeopt;
 	}
 
 	return Success;
@@ -5502,6 +5552,8 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom,
 		rc = LibinputSetPropertyHorizScroll(dev, atom, val, checkonly);
 	else if (atom == prop_scroll_pixel_distance)
 		rc = LibinputSetPropertyScrollPixelDistance(dev, atom, val, checkonly);
+	else if (atom == prop_scroll_factor)
+		rc = LibinputSetPropertyScrollFactor(dev, atom, val, checkonly);
 	else if (atom == prop_mode_groups) {
 		InputInfoPtr pInfo = dev->public.devicePrivate;
 		struct xf86libinput *driver_data = pInfo->private;
@@ -5543,6 +5595,7 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom,
 		 atom == prop_scroll_method_default ||
 		 atom == prop_scroll_methods_available ||
 		 atom == prop_scroll_pixel_distance_default ||
+		 atom == prop_scroll_factor_default ||
 		 atom == prop_sendevents_available ||
 		 atom == prop_sendevents_default ||
 		 atom == prop_serial ||
@@ -6156,6 +6209,32 @@ LibinputInitScrollPixelDistanceProperty(DeviceIntPtr dev,
 }
 
 static void
+LibinputInitScrollFactorProperty(DeviceIntPtr dev,
+				 struct xf86libinput *driver_data,
+				 struct libinput_device *device)
+{
+	float scroll_factor = driver_data->options.scroll_factor;
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
+	prop_scroll_factor = LibinputMakeProperty(dev,
+						  LIBINPUT_PROP_SCROLL_FACTOR,
+						  prop_float, 32,
+						  1, &scroll_factor);
+	if (!prop_scroll_factor)
+		return;
+
+	prop_scroll_factor_default = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_SCROLL_FACTOR_DEFAULT,
+							  prop_float, 32,
+							  1, &scroll_factor);
+
+	if (!prop_scroll_factor_default)
+		return;
+}
+
+static void
 LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 				 struct xf86libinput *driver_data,
 				 struct libinput_device *device)
@@ -6584,10 +6663,10 @@ LibinputInitPressureRangeProperty(DeviceIntPtr dev,
 {
 #if HAVE_LIBINPUT_PRESSURE_RANGE
 	struct libinput_tablet_tool *tool = driver_data->tablet_tool;
-	const struct range *range = &driver_data->options.pressure_range;
+	const struct range *rangeopt = &driver_data->options.pressure_range;
 	float data[2] = {
-		range->min,
-		range->max,
+		rangeopt->min,
+		rangeopt->max,
 	};
 
 	if ((driver_data->capabilities & CAP_TABLET_TOOL) == 0)
@@ -6700,6 +6779,7 @@ LibinputInitProperty(DeviceIntPtr dev)
 	LibinputInitNaturalScrollProperty(dev, driver_data, device);
 	LibinputInitDisableWhileTypingProperty(dev, driver_data, device);
 	LibinputInitScrollMethodsProperty(dev, driver_data, device);
+	LibinputInitScrollFactorProperty(dev, driver_data, device);
 	LibinputInitClickMethodsProperty(dev, driver_data, device);
 	LibinputInitClickfingerButtonmapProperty(dev, driver_data, device);
 	LibinputInitMiddleEmulationProperty(dev, driver_data, device);

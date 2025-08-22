@@ -24,9 +24,6 @@
 
 #pragma once
 
-#include "config.h"
-#define _GNU_SOURCE
-
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -98,47 +95,6 @@ safe_strdup(const char *str)
 	if (!s)
 		abort();
 	return s;
-}
-
-/**
- * Simple wrapper for asprintf that ensures the passed in-pointer is set
- * to NULL upon error.
- * The standard asprintf() call does not guarantee the passed in pointer
- * will be NULL'ed upon failure, whereas this wrapper does.
- *
- * @param strp pointer to set to newly allocated string.
- * This pointer should be passed to free() to release when done.
- * @param fmt the format string to use for printing.
- * @return The number of bytes printed (excluding the null byte terminator)
- * upon success or -1 upon failure. In the case of failure the pointer is set
- * to NULL.
- */
-__attribute__ ((format (printf, 2, 3)))
-static inline int
-xasprintf(char **strp, const char *fmt, ...)
-{
-	int rc = 0;
-	va_list args;
-
-	va_start(args, fmt);
-	rc = vasprintf(strp, fmt, args);
-	va_end(args);
-	if ((rc == -1) && strp)
-		*strp = NULL;
-
-	return rc;
-}
-
-__attribute__ ((format (printf, 2, 0)))
-static inline int
-xvasprintf(char **strp, const char *fmt, va_list args)
-{
-	int rc = 0;
-	rc = vasprintf(strp, fmt, args);
-	if ((rc == -1) && strp)
-		*strp = NULL;
-
-	return rc;
 }
 
 static inline bool
